@@ -1,0 +1,123 @@
+"""A run: its settings and the commands the player made, in order.
+
+The game is deterministic: the same settings and the same commands always
+give the same game.  So the command history *is* the game; everything else
+(the cards, the shop, the score) is derived from it by the engine.  The
+domain only enforces what is true of every run: commands are appended one
+at a time, the version is the number of commands, nothing happens after the
+run is over, and a client must act on the current version.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import StrEnum
+from typing import Any
+
+from .errors import GameOver, InvalidGameSettings, VersionConflict
+
+GAME_SPEEDS = (0.5, 1.0, 2.0, 4.0)
+SEED_PATTERN = re.compile(r"^[A-Za-z0-9]{1,8}$")
+
+
+@dataclass(frozen=True)
+class GameSettings:
+    """What a run is started with.  ``game_speed`` is the game's speed
+    setting: it changes when animated effects land, which decides a few races
+    (as in the game), so it is part of the run."""
+
+    seed: str
+    deck: str = "b_red"
+    stake: int = 1
+    challenge: str | None = None
+    game_speed: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not SEED_PATTERN.match(self.seed):
+            raise InvalidGameSettings("a seed is 1 to 8 letters or digits")
+        if not 1 <= self.stake <= 8:
+            raise InvalidGameSettings("the stake is a level from 1 (White) to 8 (Gold)")
+        if self.game_speed not in GAME_SPEEDS:
+            raise InvalidGameSettings(f"the game speed is one of {', '.join(f'{s:g}' for s in GAME_SPEEDS)}")
+
+
+class Phase(StrEnum):
+    """Which screen the run is on, i.e. what kind of decision it waits for."""
+
+    BLIND_SELECT = "blind_select"
+    PLAYING = "playing"
+    ROUND_EVAL = "round_eval"
+    SHOP = "shop"
+    PACK = "pack"
+    GAME_OVER = "game_over"
+
+
+@dataclass(frozen=True)
+class Progress:
+    """Where a run stands; kept with it so runs can be listed without replaying them."""
+
+    phase: Phase
+    ante: int
+    round: int
+    dollars: float
+    won: bool
+
+    @property
+    def over(self) -> bool:
+        return self.phase is Phase.GAME_OVER
+
+
+@dataclass(frozen=True)
+class Command:
+    """One accepted command, in the engine's own format (opaque here)."""
+
+    payload: Mapping[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.payload)
+
+
+@dataclass(frozen=True)
+class RunSummary:
+    id: str
+    settings: GameSettings
+    progress: Progress
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
+class Run:
+    id: str
+    settings: GameSettings
+    engine_version: str
+    progress: Progress
+    created_at: datetime
+    updated_at: datetime
+    commands: list[Command] = field(default_factory=list)
+
+    @property
+    def version(self) -> int:
+        """The number of accepted commands: every command makes a new version."""
+        return len(self.commands)
+
+    def check_version(self, expected: int | None) -> None:
+        if expected is not None and expected != self.version:
+            raise VersionConflict(expected, self.version)
+
+    def check_playable(self) -> None:
+        if self.progress.over:
+            raise GameOver()
+
+    def record(self, command: Command, progress: Progress, at: datetime) -> None:
+        self.check_playable()
+        self.commands.append(command)
+        self.progress = progress
+        self.updated_at = at
+
+    def summary(self) -> RunSummary:
+        return RunSummary(self.id, self.settings, self.progress, self.version, self.created_at, self.updated_at)
