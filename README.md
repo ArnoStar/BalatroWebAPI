@@ -11,6 +11,9 @@ uv sync
 uv run balatro-api                      # http://127.0.0.1:8000 (docs at /docs)
 ```
 
+Full documentation: [`docs/`](docs/README.md) (getting started, every endpoint, every
+data model, the front-end flows).
+
 ## Playing a run
 
 ```
@@ -87,7 +90,7 @@ is the time in seconds at which the game shows it (at the run's game speed,
 | `hand` | the scoring panel: `hand`, `level`, `chips`, `mult`, `hand_score` (only what changes) |
 | `card_text` | a pop-up over a card: `effect` (`chips`, `mult`, `x_mult`, `dollars`, `again`, `debuffed`, `message` ...) and `amount` |
 | `hand_scored` | the hand's chips, mult and score, and the round score after it |
-| `round_score`, `dollars`, `status_text` | the round score is set, money changes, text over the play area |
+| `round_score`, `dollars`, `status_text` | the round score is reset (at cash out), money changes, text over the play area |
 
 ### What the player can't see
 

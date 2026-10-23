@@ -35,6 +35,7 @@ def test_health_and_catalog(client):
     joker = next(j for j in cat["jokers"] if j["key"] == "j_joker")
     assert joker["name"] == "Joker" and joker["sprite"]["atlas"] == "Joker" and joker["config"] == {"mult": 4}
     assert cat["atlases"]["Joker"]["file"] == "Jokers.png"
+    assert cat["challenge_deck"]["key"] == "b_challenge" and cat["challenge_deck"]["sprite"]["pos"] == {"x": 0, "y": 4}
     again = client.get(f"{API}/catalog", headers={"If-None-Match": r.headers["etag"]})
     assert again.status_code == 304
 

@@ -68,6 +68,7 @@ def build_catalog() -> Catalog:
         game_version=d.version,
         engine_version=balatro.__version__,
         decks=pool("Back"),
+        challenge_deck=item(d.P_CENTERS["b_challenge"]),
         stakes=[StakeItem(level=s.stake_level, key=k, name=s.name, sprite=_sprite(sp["stakes"].get(k)))
                 for k, s in sorted(d.P_STAKES.items(), key=lambda kv: kv[1].stake_level)],
         challenges=challenges,

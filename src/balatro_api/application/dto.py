@@ -438,7 +438,7 @@ class SpritePos:
 class Sprite:
     atlas: str
     pos: SpritePos
-    soul_pos: SpritePos | None = None  # a second layer (legendary jokers, The Soul, Hologram)
+    soul_pos: SpritePos | None = None  # a second layer (legendary jokers, Hologram)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -527,6 +527,7 @@ class Catalog:
     game_version: str
     engine_version: str
     decks: list[CatalogItem]
+    challenge_deck: CatalogItem  # b_challenge: the deck most challenges are played with (not choosable)
     stakes: list[StakeItem]
     challenges: list[ChallengeItem]
     jokers: list[CatalogItem]
