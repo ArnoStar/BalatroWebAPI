@@ -17,9 +17,11 @@ router = APIRouter(tags=["meta"])
 
 @router.get("/health", summary="Is the server up")
 def health(uses: Uses) -> dict[str, str]:
+    """``auth`` is ``required`` when the game routes need an access token from
+    the identity service, ``off`` when the server runs without sign-in."""
     cat = uses.catalog()
     return {"status": "ok", "api_version": __version__, "engine_version": cat.engine_version,
-            "game_version": cat.game_version}
+            "game_version": cat.game_version, "auth": "required" if uses.authenticate.required else "off"}
 
 
 @router.get("/catalog", response_model=Catalog, summary="Static game data: names, prices, sprites")

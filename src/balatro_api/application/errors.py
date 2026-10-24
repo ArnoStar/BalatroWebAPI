@@ -5,6 +5,18 @@ from __future__ import annotations
 from balatro_api.domain import DomainError
 
 
+class NotAuthenticated(DomainError):
+    """No access token, or one the identity service didn't sign (or expired)."""
+
+    code = "unauthenticated"
+
+
+class AuthUnavailable(DomainError):
+    """The identity service's keys couldn't be fetched to check a token."""
+
+    code = "auth_unavailable"
+
+
 class DebugCommandsDisabled(DomainError):
     code = "debug_disabled"
 

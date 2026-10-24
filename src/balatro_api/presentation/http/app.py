@@ -22,6 +22,10 @@ the same run as in the game.
 A run waits for one decision at a time (`phase`). Read it with
 `GET /games/{id}`; its `actions` list what can be done. Send one with
 `POST /games/{id}/actions`. Cards are referred to by `id`.
+
+When the server runs with sign-in (`GET /health` says `"auth": "required"`),
+every game route needs an access token from the identity service
+(`Authorization: Bearer ...`), and a player only sees their own runs.
 """
 
 
@@ -29,7 +33,7 @@ def create_app(use_cases: UseCases, cors_origins: Sequence[str] = ("*",)) -> Fas
     app = FastAPI(title="Balatro Web API", version=__version__, description=DESCRIPTION)
     app.state.use_cases = use_cases
     app.add_middleware(CORSMiddleware, allow_origins=list(cors_origins), allow_methods=["*"], allow_headers=["*"],
-                       expose_headers=["ETag", "Location"])
+                       expose_headers=["ETag", "Location", "WWW-Authenticate"])
     errors.install(app)
     api = APIRouter(prefix="/api/v1")
     api.include_router(meta.router)

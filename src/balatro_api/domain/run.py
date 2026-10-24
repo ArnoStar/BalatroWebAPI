@@ -20,6 +20,9 @@ from typing import Any
 from .errors import GameOver, InvalidGameSettings, VersionConflict
 
 GAME_SPEEDS = (0.5, 1.0, 2.0, 4.0)
+# who owns the runs when the server runs without sign-in (and the runs made
+# before runs had owners)
+ANONYMOUS_PLAYER = "local"
 SEED_PATTERN = re.compile(r"^[A-Za-z0-9]{1,8}$")
 
 
@@ -88,6 +91,7 @@ class RunSummary:
     version: int
     created_at: datetime
     updated_at: datetime
+    owner: str = ANONYMOUS_PLAYER
 
 
 @dataclass
@@ -99,6 +103,9 @@ class Run:
     created_at: datetime
     updated_at: datetime
     commands: list[Command] = field(default_factory=list)
+    owner: str = ANONYMOUS_PLAYER
+    """The player whose run it is (their account id at the identity service).
+    Nobody else can see or play it."""
 
     @property
     def version(self) -> int:
@@ -108,6 +115,9 @@ class Run:
     def check_version(self, expected: int | None) -> None:
         if expected is not None and expected != self.version:
             raise VersionConflict(expected, self.version)
+
+    def owned_by(self, player_id: str) -> bool:
+        return self.owner == player_id
 
     def check_playable(self) -> None:
         if self.progress.over:
@@ -120,4 +130,5 @@ class Run:
         self.updated_at = at
 
     def summary(self) -> RunSummary:
-        return RunSummary(self.id, self.settings, self.progress, self.version, self.created_at, self.updated_at)
+        return RunSummary(self.id, self.settings, self.progress, self.version, self.created_at, self.updated_at,
+                          self.owner)

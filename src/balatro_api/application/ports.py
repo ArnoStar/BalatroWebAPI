@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 from balatro_api.domain import Command, GameSettings, Progress, Run, RunSummary
 
-from .dto import Catalog, FeedbackEvent, GameView, HandPreview, LegalAction, PlayerAction
+from .dto import Catalog, FeedbackEvent, GameView, HandPreview, LegalAction, Player, PlayerAction
 
 
 @dataclass(frozen=True)
@@ -82,8 +82,23 @@ class GameRepository(Protocol):
         """Raises GameNotFound."""
         ...
 
-    def list(self, limit: int, offset: int) -> list[RunSummary]:
-        """Most recently updated first."""
+    def list(self, owner: str, limit: int, offset: int) -> list[RunSummary]:
+        """The owner's runs, most recently updated first."""
+        ...
+
+
+class Authenticator(Protocol):
+    """Checks the access tokens of the identity service (BalatroIndentityService)."""
+
+    @property
+    def required(self) -> bool:
+        """False when the server runs without sign-in: every caller is the
+        anonymous player."""
+        ...
+
+    def authenticate(self, token: str | None) -> Player:
+        """The token's player. Raises NotAuthenticated, or AuthUnavailable when
+        the identity service's keys can't be fetched."""
         ...
 
 

@@ -119,7 +119,7 @@ contract.
 
 ```sql
 runs     (id, seed, deck, stake, challenge, game_speed, engine_version, version,
-          phase, ante, round, dollars, won, created_at, updated_at)
+          phase, ante, round, dollars, won, created_at, updated_at, owner)
 commands (run_id, seq, command)        -- command: JSON in the engine's format
 ```
 
@@ -127,8 +127,28 @@ commands (run_id, seq, command)        -- command: JSON in the engine's format
 only `WHERE version = expected_version`, then inserts the new commands. If
 another process saved first, no row matches and `VersionConflict` is raised.
 `phase`, `ante`, `round`, `dollars` and `won` are a cache for `GET /games`;
-the commands are the truth. `InMemoryGameRepository` has the same behaviour,
-without the file.
+the commands are the truth. `owner` is the player's account id, indexed with
+`updated_at` for `GET /games`. A database made before runs had owners gets the
+column on open, and its runs go to the anonymous player `local`.
+`InMemoryGameRepository` has the same behaviour, without the file.
+
+### Players
+
+Each request's player comes from the `Authorization` header. The presentation
+layer's `current_player` dependency calls the `Authenticate` use case, which
+asks the `Authenticator` port:
+
+- `JwtAuthenticator` (`infrastructure/auth.py`) checks an RS256 access token
+  from the identity service. It verifies the signature with the key the
+  token's `kid` names, fetched from the JWKS URL by `jwt.PyJWKClient` (cached,
+  and fetched again for an unknown `kid`). It also checks the issuer, the
+  audience (`balatro`), `exp` (30 s leeway), and `typ: "access"`. The player is
+  `Player(id=sub, name=name)`.
+- `AnonymousAuthenticator` makes everyone `Player(id="local")`, for sign-in off.
+
+Every use case takes the player first. `owned_run` loads a run and raises
+`GameNotFound` when it belongs to someone else, so the API never says whether
+another player's run exists.
 
 ## The life of an action
 

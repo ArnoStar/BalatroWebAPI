@@ -3,9 +3,12 @@ the adapters and builds the use cases with them."""
 
 from __future__ import annotations
 
+import logging
+
 from .application.locks import RunLocks
-from .application.ports import Clock, GameEngine, GameRepository, IdGenerator
+from .application.ports import Authenticator, Clock, GameEngine, GameRepository, IdGenerator
 from .application.use_cases import (
+    Authenticate,
     CreateGame,
     DeleteGame,
     GetCatalog,
@@ -19,13 +22,24 @@ from .application.use_cases import (
     UseCases,
 )
 from .config import Settings
+from .infrastructure.auth import AnonymousAuthenticator, JwtAuthenticator
 from .infrastructure.engine import BalatroEngine
 from .infrastructure.persistence import InMemoryGameRepository, SqliteGameRepository
 from .infrastructure.system import SystemClock, UuidGenerator
 
+log = logging.getLogger(__name__)
+
+
+def build_authenticator(settings: Settings) -> Authenticator:
+    if settings.auth_jwks_url and settings.auth_issuer:
+        return JwtAuthenticator.from_jwks_url(settings.auth_jwks_url, settings.auth_issuer, settings.auth_audience)
+    log.warning("sign-in is off (BALATRO_API_AUTH_JWKS_URL is not set): every caller is the same player")
+    return AnonymousAuthenticator()
+
 
 def build_use_cases(settings: Settings, engine: GameEngine | None = None, games: GameRepository | None = None,
-                    ids: IdGenerator | None = None, clock: Clock | None = None) -> UseCases:
+                    ids: IdGenerator | None = None, clock: Clock | None = None,
+                    authenticator: Authenticator | None = None) -> UseCases:
     engine = engine or BalatroEngine(cache_size=settings.cache_size)
     if games is None:
         games = InMemoryGameRepository() if settings.database == "memory" else SqliteGameRepository(settings.database)
@@ -33,6 +47,7 @@ def build_use_cases(settings: Settings, engine: GameEngine | None = None, games:
     clock = clock or SystemClock()
     locks = RunLocks()
     return UseCases(
+        authenticate=Authenticate(authenticator or build_authenticator(settings)),
         create_game=CreateGame(engine, games, ids, clock),
         get_game=GetGame(engine, games),
         list_games=ListGames(games),

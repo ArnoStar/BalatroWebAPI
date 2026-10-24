@@ -545,3 +545,13 @@ class Catalog:
     poker_hands: list[PokerHandItem]
     cards: list[PlayingCardItem]
     atlases: dict[str, AtlasView]
+
+
+@dataclass(frozen=True, kw_only=True)
+class Player:
+    """Who is calling: the account id (``sub``) and display name (``name``)
+    from the identity service's access token, or the anonymous player when the
+    server runs without sign-in."""
+
+    id: str
+    name: str | None = None

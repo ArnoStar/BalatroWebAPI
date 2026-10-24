@@ -3,6 +3,10 @@
 How a front end drives a run, screen by screen. Every screen works the same
 way:
 
+(With sign-in on, every request carries the player's access token; on
+`401 unauthenticated`, refresh it at the identity service and send the request
+again. See [endpoints.md, Authentication](endpoints.md#authentication).)
+
 1. Render the `GameView`.
 2. Enable what its `actions` list.
 3. Send one action, with `expected_version`.

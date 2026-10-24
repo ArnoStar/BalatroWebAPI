@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from balatro_api.application.dto import NewGame, PlayerAction
+from balatro_api.application.dto import NewGame, Player, PlayerAction
 from balatro_api.application.errors import DebugCommandsDisabled
 from balatro_api.application.locks import RunLocks
 from balatro_api.application.ports import Outcome
@@ -26,6 +26,8 @@ from balatro_api.domain import (
 from balatro_api.infrastructure.persistence import InMemoryGameRepository
 
 START = Progress(phase=Phase.BLIND_SELECT, ante=1, round=0, dollars=4, won=False)
+ME = Player(id="me")
+OTHER = Player(id="someone else")
 
 
 class FakeEngine:
@@ -87,16 +89,16 @@ def setup() -> tuple[FakeEngine, InMemoryGameRepository, CreateGame, PlayAction]
 
 def test_create_uses_a_random_seed_when_none_is_given(setup):
     engine, repo, create, _ = setup
-    create(NewGame())
+    create(ME, NewGame())
     assert repo.get("g1").settings.seed == "RANDOM12"
-    create(NewGame(seed="ABC"))
+    create(ME, NewGame(seed="ABC"))
     assert repo.get("g2").settings.seed == "ABC"
 
 
 def test_an_action_is_recorded_saved_then_committed(setup):
     engine, repo, create, play = setup
-    create(NewGame(seed="ABC"))
-    result = play("g1", PlayerAction(type="select_blind"), expected_version=0)
+    create(ME, NewGame(seed="ABC"))
+    result = play(ME, "g1", PlayerAction(type="select_blind"), expected_version=0)
     assert result.game == {"id": "g1", "version": 1}
     run = repo.get("g1")
     assert [c.as_dict() for c in run.commands] == [{"cmd": "select_blind"}]
@@ -107,25 +109,25 @@ def test_an_action_is_recorded_saved_then_committed(setup):
 @pytest.mark.parametrize("error", [IllegalAction("no"), RuntimeError("engine bug")])
 def test_a_failed_action_changes_nothing(setup, error):
     engine, repo, create, play = setup
-    create(NewGame(seed="ABC"))
+    create(ME, NewGame(seed="ABC"))
     engine.fail = error
     with pytest.raises(type(error)):
-        play("g1", PlayerAction(type="select_blind"))
+        play(ME, "g1", PlayerAction(type="select_blind"))
     assert repo.get("g1").version == 0 and engine.committed == []
 
 
 def test_a_stale_version_is_refused(setup):
     engine, repo, create, play = setup
-    create(NewGame(seed="ABC"))
-    play("g1", PlayerAction(type="select_blind"))
+    create(ME, NewGame(seed="ABC"))
+    play(ME, "g1", PlayerAction(type="select_blind"))
     with pytest.raises(VersionConflict):
-        play("g1", PlayerAction(type="play"), expected_version=0)
+        play(ME, "g1", PlayerAction(type="play"), expected_version=0)
     assert repo.get("g1").version == 1
 
 
 def test_a_concurrent_save_is_refused(setup):
     engine, repo, create, play = setup
-    create(NewGame(seed="ABC"))
+    create(ME, NewGame(seed="ABC"))
     other = repo.get("g1")  # another server process acts first
     other.record(Command({"cmd": "skip_blind"}), START, Clock().now())
     repo.save(other, expected_version=0)
@@ -137,29 +139,29 @@ def test_a_concurrent_save_is_refused(setup):
         return run
     repo.get = get_stale  # type: ignore[method-assign]
     with pytest.raises(VersionConflict):
-        play("g1", PlayerAction(type="select_blind"))
+        play(ME, "g1", PlayerAction(type="select_blind"))
     assert engine.committed == []
 
 
 def test_no_action_after_game_over(setup):
     engine, repo, create, play = setup
-    create(NewGame(seed="ABC"))
+    create(ME, NewGame(seed="ABC"))
     engine.next_phase = Phase.GAME_OVER
-    play("g1", PlayerAction(type="play"))
+    play(ME, "g1", PlayerAction(type="play"))
     with pytest.raises(GameOver):
-        play("g1", PlayerAction(type="play"))
+        play(ME, "g1", PlayerAction(type="play"))
 
 
 def test_unknown_games(setup):
     _, _, _, play = setup
     with pytest.raises(GameNotFound):
-        play("nope", PlayerAction(type="play"))
+        play(ME, "nope", PlayerAction(type="play"))
 
 
 def test_delete_forgets_the_engine_game(setup):
     engine, repo, create, _ = setup
-    create(NewGame(seed="ABC"))
-    DeleteGame(engine, repo, RunLocks())("g1")  # type: ignore[arg-type]
+    create(ME, NewGame(seed="ABC"))
+    DeleteGame(engine, repo, RunLocks())(ME, "g1")  # type: ignore[arg-type]
     assert engine.forgotten == ["g1"]
     with pytest.raises(GameNotFound):
         repo.get("g1")
@@ -167,7 +169,18 @@ def test_delete_forgets_the_engine_game(setup):
 
 def test_debug_commands_can_be_disabled(setup):
     engine, repo, create, _ = setup
-    create(NewGame(seed="ABC"))
+    create(ME, NewGame(seed="ABC"))
     debug = RunDebugCommand(engine, repo, RunLocks(), Clock(), enabled=False)  # type: ignore[arg-type]
     with pytest.raises(DebugCommandsDisabled):
-        debug("g1", {"cmd": "cheat", "dollars": 100})
+        debug(ME, "g1", {"cmd": "cheat", "dollars": 100})
+
+
+def test_other_players_runs_are_not_found(setup):
+    engine, repo, create, play = setup
+    create(ME, NewGame(seed="ABC"))
+    assert repo.get("g1").owner == "me"
+    with pytest.raises(GameNotFound):
+        play(OTHER, "g1", PlayerAction(type="select_blind"))
+    with pytest.raises(GameNotFound):
+        DeleteGame(engine, repo, RunLocks())(OTHER, "g1")  # type: ignore[arg-type]
+    assert repo.get("g1").version == 0 and engine.committed == []

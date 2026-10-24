@@ -12,7 +12,17 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from balatro_api.domain import Command, GameNotFound, GameSettings, Phase, Progress, Run, RunSummary, VersionConflict
+from balatro_api.domain import (
+    ANONYMOUS_PLAYER,
+    Command,
+    GameNotFound,
+    GameSettings,
+    Phase,
+    Progress,
+    Run,
+    RunSummary,
+    VersionConflict,
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -30,7 +40,8 @@ CREATE TABLE IF NOT EXISTS runs (
     dollars REAL NOT NULL,
     won INTEGER NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    owner TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS runs_updated ON runs (updated_at DESC);
 CREATE TABLE IF NOT EXISTS commands (
@@ -42,7 +53,13 @@ CREATE TABLE IF NOT EXISTS commands (
 """
 
 RUN_COLUMNS = ("id, seed, deck, stake, challenge, game_speed, engine_version, version, phase, ante, round, dollars, "
-               "won, created_at, updated_at")
+               "won, created_at, updated_at, owner")
+
+# databases made before runs had owners: their runs are the anonymous player's
+MIGRATIONS = f"""
+ALTER TABLE runs ADD COLUMN owner TEXT NOT NULL DEFAULT '{ANONYMOUS_PLAYER}';
+"""
+INDEXES = "CREATE INDEX IF NOT EXISTS runs_owner_updated ON runs (owner, updated_at DESC);"
 
 
 class SqliteGameRepository:
@@ -58,6 +75,10 @@ class SqliteGameRepository:
             if self.path != ":memory:":
                 self._db.execute("PRAGMA journal_mode = WAL")
             self._db.executescript(SCHEMA)
+            columns = {r["name"] for r in self._db.execute("PRAGMA table_info(runs)")}
+            if "owner" not in columns:
+                self._db.executescript(MIGRATIONS)
+            self._db.executescript(INDEXES)
 
     def close(self) -> None:
         with self._lock:
@@ -72,7 +93,7 @@ class SqliteGameRepository:
                             won=bool(row["won"]))
         return RunSummary(id=row["id"], settings=settings, progress=progress, version=row["version"],
                           created_at=datetime.fromisoformat(row["created_at"]),
-                          updated_at=datetime.fromisoformat(row["updated_at"]))
+                          updated_at=datetime.fromisoformat(row["updated_at"]), owner=row["owner"])
 
     @staticmethod
     def _progress(run: Run) -> tuple[str, int, int, float, int]:
@@ -91,9 +112,9 @@ class SqliteGameRepository:
             self._db.execute("BEGIN IMMEDIATE")
             try:
                 self._db.execute(
-                    f"INSERT INTO runs ({RUN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    f"INSERT INTO runs ({RUN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (run.id, s.seed, s.deck, s.stake, s.challenge, s.game_speed, run.engine_version, run.version,
-                     *self._progress(run), run.created_at.isoformat(), run.updated_at.isoformat()))
+                     *self._progress(run), run.created_at.isoformat(), run.updated_at.isoformat(), run.owner))
                 self._insert_commands(run, 0)
                 self._db.execute("COMMIT")
             except BaseException:
@@ -109,7 +130,7 @@ class SqliteGameRepository:
                 "SELECT command FROM commands WHERE run_id = ? ORDER BY seq", (run_id,))]
         s = self._summary(row)
         return Run(id=s.id, settings=s.settings, engine_version=row["engine_version"], progress=s.progress,
-                   created_at=s.created_at, updated_at=s.updated_at, commands=commands)
+                   created_at=s.created_at, updated_at=s.updated_at, commands=commands, owner=s.owner)
 
     def save(self, run: Run, expected_version: int) -> None:
         with self._lock:
@@ -136,8 +157,9 @@ class SqliteGameRepository:
             if cur.rowcount != 1:
                 raise GameNotFound(run_id)
 
-    def list(self, limit: int, offset: int) -> list[RunSummary]:
+    def list(self, owner: str, limit: int, offset: int) -> list[RunSummary]:
         with self._lock:
-            rows = self._db.execute(f"SELECT {RUN_COLUMNS} FROM runs ORDER BY updated_at DESC LIMIT ? OFFSET ?",
-                                    (limit, offset)).fetchall()
+            rows = self._db.execute(
+                f"SELECT {RUN_COLUMNS} FROM runs WHERE owner = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                (owner, limit, offset)).fetchall()
         return [self._summary(r) for r in rows]

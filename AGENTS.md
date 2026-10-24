@@ -33,7 +33,12 @@ which reproduces the original game exactly.
    state, upcoming shop or pack contents, or the identity of face-down cards.
    The deck view has no card ids, because they would let a client track a card
    that is later drawn face down.
-6. **A cached game is touched by one thread at a time.** Inside the engine
+6. **A run is its owner's.** Every use case takes the `Player` first and loads
+   runs through `owned_run`. Another player's run is `GameNotFound` (404),
+   never 403: don't reveal that it exists. Players come from the identity
+   service's access tokens (`Authenticator` port). Never trust a player id the
+   client sends any other way.
+7. **A cached game is touched by one thread at a time.** Inside the engine
    adapter, always go through `BalatroEngine._game(run)`, which holds the
    run's lock. Even read-only engine calls such as `legal_actions` or
    `preview_hand` swap state temporarily.
@@ -48,14 +53,15 @@ domain  <-  application  <-  infrastructure, presentation  <-  bootstrap, main
   `code`s. Pure Python, with no imports from other layers.
 - `application/`: one class per use case (`use_cases.py`), the DTOs that are
   the API contract (`dto.py`), and the ports it needs (`ports.py`:
-  `GameEngine`, `GameRepository`, `Clock`, `IdGenerator`). No web framework,
-  no engine import.
+  `GameEngine`, `GameRepository`, `Authenticator`, `Clock`, `IdGenerator`).
+  No web framework, no engine import.
 - `infrastructure/`: adapters for the ports. `engine/` is the **only** place
   that imports `balatro`: `adapter.py` handles the cache, replay and
   transactions, `commands.py` translates card ids to indices and builds legal
   actions, `presenter.py` builds the views, `catalog.py` the static data.
   `persistence/` has SQLite and in-memory storage; `system.py` has the clock
-  and ids.
+  and ids; `auth.py` checks the identity service's tokens (PyJWT and its
+  JWKS client) or makes everyone the anonymous player.
 - `presentation/http/`: FastAPI routes, request schemas (pydantic) and the
   mapping of errors to HTTP. It depends on application use cases, never on
   infrastructure.
@@ -91,9 +97,11 @@ the test.
   `legal_actions` in `infrastructure/engine/commands.py`. Add an HTTP test.
 - **A new view field:** add it to the DTO, fill it in `presenter.py`, check
   rule 5 (hidden information), and test it.
-- **A new endpoint:** add a use case in `application/use_cases.py`, add it to
-  `UseCases`, wire it in `bootstrap.py`, and add a route. Add unit tests with
-  fakes and an HTTP test.
+- **A new endpoint:** add a use case in `application/use_cases.py` that takes
+  the `Player` first, add it to `UseCases`, wire it in `bootstrap.py`, and add
+  a route with `player: CurrentPlayer`. Add unit tests with fakes and an HTTP
+  test, including one where another player is refused
+  (`tests/api/test_auth_http.py`; `tests/tokens.py` signs test tokens).
 - **A new storage backend:** implement `GameRepository`, including the
   optimistic `save(run, expected_version)`. Run it through
   `tests/integration/test_sqlite.py`'s parametrized tests.

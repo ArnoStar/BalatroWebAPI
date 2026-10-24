@@ -23,15 +23,38 @@ named here are in [Data models](models.md).
 
 ---
 
+## Authentication
+
+When the server runs with sign-in (`GET /health` gives `"auth": "required"`),
+every `/games` route needs an access token from the identity service
+(BalatroIndentityService):
+
+```
+Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
+```
+
+Without a token, or with an invalid or expired one, the answer is
+`401 unauthenticated` with a `WWW-Authenticate: Bearer` header. The client then
+refreshes its token at the identity service and tries again. A player only
+sees their own runs: another player's run is `404 game_not_found`.
+`/health` and `/catalog` are public.
+
+With sign-in off (`"auth": "off"`), the header is ignored and everyone is the
+same player.
+
+---
+
 ## `GET /health`
 
-Returns `200` with the versions the server runs.
+Returns `200` with the versions the server runs, and whether it needs a
+signed-in player.
 
 ```json
-{"status": "ok", "api_version": "0.1.0", "engine_version": "0.3.0", "game_version": "1.0.1o-FULL"}
+{"status": "ok", "api_version": "0.1.0", "engine_version": "0.3.0", "game_version": "1.0.1o-FULL", "auth": "required"}
 ```
 
 `game_version` is the Balatro version whose logic the engine reproduces.
+`auth` is `required` or `off` (see [Authentication](#authentication)).
 
 ---
 
@@ -318,14 +341,16 @@ Every error is a problem details object
 
 | Status | `code` | Meaning | Extra fields |
 |---|---|---|---|
+| 401 | `unauthenticated` | no access token, or an invalid or expired one (sign-in on) | |
 | 403 | `debug_disabled` | debug commands are off on this server | |
-| 404 | `game_not_found` | no run with this id | |
+| 404 | `game_not_found` | no run with this id (or it is another player's) | |
 | 409 | `illegal_action` | the game doesn't allow this action now; nothing changed | |
 | 409 | `game_over` | the run is over | |
 | 409 | `version_conflict` | the run has moved on since the version the client acted on | `expected_version`, `current_version` |
 | 422 | `invalid_settings` | the run can't be started with these settings | |
 | 422 | `invalid_request` | the body or the query doesn't match the schema | `errors`: `[{loc, msg, type}]` |
 | 500 | `internal_error` | a server bug; nothing changed | |
+| 503 | `auth_unavailable` | the identity service's keys can't be fetched to check the token | |
 
 ```json
 {"type": "https://balatro-api/errors/version_conflict", "title": "Conflict", "status": 409,
@@ -339,4 +364,5 @@ Every error is a problem details object
 ## CORS
 
 Browsers may call the API from the origins in `BALATRO_API_CORS_ORIGINS`
-(default: any). The `ETag` and `Location` headers are exposed to scripts.
+(default: any). The `ETag`, `Location` and `WWW-Authenticate` headers are
+exposed to scripts, and `Authorization` is allowed.

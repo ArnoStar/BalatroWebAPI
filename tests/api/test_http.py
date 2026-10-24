@@ -121,3 +121,10 @@ def test_cors_and_openapi(client):
     schema = client.get("/openapi.json").json()
     assert "/api/v1/games/{game_id}/actions" in schema["paths"]
     assert "GameView" in schema["components"]["schemas"]
+
+
+def test_without_sign_in_everyone_is_the_same_player(client):
+    assert client.get(f"{API}/health").json()["auth"] == "off"
+    game = new_game(client)
+    other = {"Authorization": "Bearer whatever"}  # ignored
+    assert client.get(f"{API}/games/{game['id']}", headers=other).status_code == 200

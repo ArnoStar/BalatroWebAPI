@@ -14,6 +14,25 @@ uv run balatro-api                      # http://127.0.0.1:8000 (docs at /docs)
 Full documentation: [`docs/`](docs/README.md) (getting started, every endpoint, every
 data model, the front-end flows).
 
+## Players and sign-in
+
+Players sign in with **BalatroIndentityService**, which gives them RS256 access
+tokens (JWTs). With `BALATRO_API_AUTH_JWKS_URL` set, every game route needs one
+(`Authorization: Bearer <token>`). The API checks the token's signature against
+the identity service's public keys (fetched from that URL and cached), its
+issuer (`BALATRO_API_AUTH_ISSUER`), its audience and its expiry. It never calls
+the identity service per request.
+
+A run belongs to the player who started it (the token's `sub`). Nobody else can
+list, read or play it: someone else's run answers 404 `game_not_found`, as if
+it didn't exist.
+
+Without `BALATRO_API_AUTH_JWKS_URL`, the server runs without sign-in. Every
+caller is the same anonymous player, `local`, which owns the runs made before
+runs had owners. This mode is for development and for the front end's
+frame-by-frame tools. `GET /health` says which mode is on: `"auth": "required"`
+or `"off"`.
+
 ## Playing a run
 
 ```
@@ -106,7 +125,9 @@ Errors are [problem details](https://www.rfc-editor.org/rfc/rfc9457)
 
 | Status | `code` | |
 |---|---|---|
-| 404 | `game_not_found` | |
+| 401 | `unauthenticated` | no access token, or one that is invalid or expired (sign-in on) |
+| 503 | `auth_unavailable` | the identity service's keys can't be fetched to check the token |
+| 404 | `game_not_found` | also someone else's run |
 | 409 | `illegal_action` | the game doesn't allow this now; nothing changed |
 | 409 | `game_over` | the run is over |
 | 409 | `version_conflict` | `expected_version` is not the run's version (`current_version` is given) |
@@ -133,6 +154,9 @@ game.
 | `BALATRO_API_CACHE_SIZE` | `256` | Runs kept in memory; the others are rebuilt from their commands when needed |
 | `BALATRO_API_DEBUG_COMMANDS` | off | Enables `POST /games/{id}/debug` |
 | `BALATRO_API_HOST`, `BALATRO_API_PORT` | `127.0.0.1`, `8000` | For `balatro-api` |
+| `BALATRO_API_AUTH_JWKS_URL` | unset (sign-in off) | The identity service's `/.well-known/jwks.json` |
+| `BALATRO_API_AUTH_ISSUER` | | Required with the JWKS URL: the identity service's `PUBLIC_URL`, exactly |
+| `BALATRO_API_AUTH_AUDIENCE` | `balatro` | The identity service's `JWT_AUDIENCE` |
 
 ## Docker
 

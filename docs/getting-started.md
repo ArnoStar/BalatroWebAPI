@@ -28,6 +28,20 @@ restart. These environment variables change the setup:
 | `BALATRO_API_CACHE_SIZE` | `256` | How many runs keep their game in memory. Others are rebuilt from their history on the next request (slower, same result) |
 | `BALATRO_API_DEBUG_COMMANDS` | off | `1` enables `POST /games/{id}/debug` (give money, add jokers, force a boss...), for testing a front end |
 | `BALATRO_API_HOST`, `BALATRO_API_PORT` | `127.0.0.1`, `8000` | Where `balatro-api` listens |
+| `BALATRO_API_AUTH_JWKS_URL` | unset | The identity service's key set (`http://127.0.0.1:8001/.well-known/jwks.json`): turns sign-in on |
+| `BALATRO_API_AUTH_ISSUER` | | With sign-in: the identity service's `PUBLIC_URL` (`http://localhost:8001`) |
+| `BALATRO_API_AUTH_AUDIENCE` | `balatro` | With sign-in: the tokens' audience |
+
+By default the server runs **without sign-in**: anyone can call it, and every
+caller is the same player. To play as real players, run BalatroIndentityService
+(`make services && make run` there, on port 8001), set the first two auth
+variables, and send its access tokens:
+
+```
+TOKEN=$(curl -s -X POST localhost:8001/auth/login -H 'content-type: application/json' \
+  -d '{"email": "me@example.com", "password": "..."}' | jq -r .access_token)
+curl localhost:8000/api/v1/games -H "Authorization: Bearer $TOKEN"
+```
 
 You can also run it with any ASGI server, for example
 `uv run uvicorn balatro_api.main:app --reload`.

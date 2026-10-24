@@ -38,7 +38,8 @@ class InMemoryGameRepository:
             if self._runs.pop(run_id, None) is None:
                 raise GameNotFound(run_id)
 
-    def list(self, limit: int, offset: int) -> list[RunSummary]:
+    def list(self, owner: str, limit: int, offset: int) -> list[RunSummary]:
         with self._lock:
-            runs = sorted(self._runs.values(), key=lambda r: r.updated_at, reverse=True)
+            runs = sorted((r for r in self._runs.values() if r.owned_by(owner)), key=lambda r: r.updated_at,
+                          reverse=True)
             return [r.summary() for r in runs[offset:offset + limit]]
