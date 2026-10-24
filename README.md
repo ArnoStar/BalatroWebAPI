@@ -7,9 +7,14 @@ as in the original game. This service never reimplements a rule; it stores
 runs, translates requests and shows the player what the game would show.
 
 ```
-uv sync
-uv run balatro-api                      # http://127.0.0.1:8000 (docs at /docs)
+make install
+make run                                # http://127.0.0.1:8000 (docs at /docs), no sign-in
+make run-auth                           # with sign-in: the identity service on :8001
+make check                              # tests, ruff, mypy
 ```
+
+(`uv run balatro-api` still works.) `make` lists every command.
+BalatroFrontEnd's `make dev` runs the whole site, this API included.
 
 Full documentation: [`docs/`](docs/README.md) (getting started, every endpoint, every
 data model, the front-end flows).
