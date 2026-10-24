@@ -126,11 +126,12 @@ To develop against a local engine checkout, run
 ## Commands
 
 ```
-uv sync                         # install (Python 3.12+)
-uv run pytest                   # all tests (about 5 s)
-uv run ruff check src tests
-uv run mypy
-uv run balatro-api              # serve on 127.0.0.1:8000, docs at /docs
+make install                    # uv sync (Python 3.12+)
+make test                       # uv run pytest, all tests (about 5 s)
+make lint                       # uv run ruff check src tests
+make typecheck                  # uv run mypy
+make check                      # the three
+make run                        # serve on 127.0.0.1:8000 (reload), docs at /docs; make run-auth: with sign-in
 ```
 
 Before committing, all three checks must pass.
