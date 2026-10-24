@@ -134,6 +134,20 @@ game.
 | `BALATRO_API_DEBUG_COMMANDS` | off | Enables `POST /games/{id}/debug` |
 | `BALATRO_API_HOST`, `BALATRO_API_PORT` | `127.0.0.1`, `8000` | For `balatro-api` |
 
+## Docker
+
+```
+docker build --network host -t balatro-api .
+docker run -p 8000:8000 -v balatro-data:/data balatro-api
+```
+
+The image listens on `0.0.0.0:8000` and keeps the runs in `/data/balatro.db`
+(mount a volume there); the settings above apply. `--network host` lets the
+build download through this machine's own connection: behind a VPN whose MTU
+is smaller than Docker's bridge (WireGuard: 1420), downloads from the bridge
+stall. To run it with the front end, see BalatroFrontEnd's
+`docker-compose.yml`.
+
 ## How it works
 
 A run is stored as its settings and the list of commands the player made. The
