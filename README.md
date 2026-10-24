@@ -148,6 +148,15 @@ is smaller than Docker's bridge (WireGuard: 1420), downloads from the bridge
 stall. To run it with the front end, see BalatroFrontEnd's
 `docker-compose.yml`.
 
+## Deployment
+
+`.github/workflows/ci-cd.yml` runs the tests, ruff, mypy and a Docker build on
+every push and pull request on `main` and `dev`. A push or a merge to `main`
+then deploys: the code is copied to the server over SSH and BalatroFrontEnd's
+`docker-compose.yml` rebuilds and restarts the `api` service there, and the job
+waits until it is healthy. The server's setup and the secrets (the same in both
+repositories) are in BalatroFrontEnd's README, "Deployment".
+
 ## How it works
 
 A run is stored as its settings and the list of commands the player made. The
