@@ -572,6 +572,7 @@ class Player:
 
     id: str
     name: str | None = None
+    roles: frozenset[str] = frozenset()  # the token's ``roles`` (application/permissions.py)
 
 
 # ------------------------------------------------------------------ statistics

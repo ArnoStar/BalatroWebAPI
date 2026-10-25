@@ -40,6 +40,7 @@ from .dto import (
 )
 from .errors import DebugCommandsDisabled, ImportForbidden
 from .locks import RunLocks
+from .permissions import Permission, allowed
 from .ports import Authenticator, BoardRow, Clock, GameEngine, GameRepository, IdGenerator, Outcome
 from .statistics import player_stats, score
 
@@ -89,8 +90,9 @@ class CreateGame:
 
 class ImportGame:
     """Rebuild a run from its settings and commands, as the caller's run (to
-    reproduce a bug report).  Only for admins, or on a server with debug
-    commands.  The new run doesn't count for statistics."""
+    reproduce a bug report).  For accounts allowed to (their roles, or the
+    BALATRO_API_ADMINS list), or anyone on a server with debug commands.  The
+    new run doesn't count for statistics."""
 
     def __init__(self, engine: GameEngine, games: GameRepository, ids: IdGenerator, clock: Clock,
                  debug_enabled: bool, admins: Sequence[str]) -> None:
@@ -98,7 +100,7 @@ class ImportGame:
         self.debug_enabled, self.admins = debug_enabled, frozenset(admins)
 
     def __call__(self, player: Player, request: ImportedRun) -> GameView:
-        if not (self.debug_enabled or player.id in self.admins):
+        if not (self.debug_enabled or player.id in self.admins or allowed(player, Permission.IMPORT_RUNS)):
             raise ImportForbidden()
         settings = self.engine.check_settings(GameSettings(
             seed=request.seed, deck=request.deck, stake=request.stake, challenge=request.challenge,
@@ -201,8 +203,10 @@ class PlayAction(_ChangeRun):
 
 
 class RunDebugCommand(_ChangeRun):
-    """Test helpers for front-end development (give money, add a joker, force
-    a boss ...).  They are recorded like actions, so the run still replays."""
+    """Test helpers (give money, add a joker, force a boss ...): on a server
+    with debug commands, or for the accounts whose roles allow them (testers).
+    They are recorded like actions, so the run still replays; the run then
+    doesn't count for statistics."""
 
     def __init__(self, engine: GameEngine, games: GameRepository, locks: RunLocks, clock: Clock,
                  enabled: bool) -> None:
@@ -211,7 +215,7 @@ class RunDebugCommand(_ChangeRun):
 
     def __call__(self, player: Player, game_id: str, command: dict[str, Any],
                  expected_version: int | None = None) -> ActionResult:
-        if not self.enabled:
+        if not (self.enabled or allowed(player, Permission.DEBUG_COMMANDS)):
             raise DebugCommandsDisabled()
         return self._change(player, game_id, expected_version, lambda run: self.engine.apply_debug(run, command),
                             debug=True)

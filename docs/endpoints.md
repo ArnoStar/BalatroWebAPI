@@ -304,9 +304,9 @@ oracle tools.
 
 Rebuilds a run from its history, as a new run of the caller's: to see a bug
 report's run again (BalatroBugReportService keeps the history; the game's
-`/play/?report=<id>` calls this). Allowed for the accounts in
-`BALATRO_API_ADMINS`, or anyone on a server with debug commands; otherwise
-`403 import_forbidden`.
+`/play/?report=<id>` calls this). Allowed for the developer and admin roles
+(and the accounts in `BALATRO_API_ADMINS`), or anyone on a server with debug
+commands; otherwise `403 import_forbidden`.
 
 **Body**: a history as `GET /games/{id}/history` gives it (extra fields are
 ignored), possibly with fewer commands: `{"settings": {"seed", "deck",
@@ -323,7 +323,8 @@ counts as a debug run: it never counts for statistics.
 Applies a test helper. It exists only to help build and test a front end, for
 example to reach a late ante, try a given joker, or force a boss. It returns
 `403 debug_disabled` unless the server runs with
-`BALATRO_API_DEBUG_COMMANDS=1`. Helpers are recorded in the history like
+`BALATRO_API_DEBUG_COMMANDS=1` or the caller has the tester, developer or
+admin role. A run that used one doesn't count for statistics. Helpers are recorded in the history like
 actions, so the run still replays.
 
 **Body**: `{"command": {...}, "expected_version": null}`, where `command` is
