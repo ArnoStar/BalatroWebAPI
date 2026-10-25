@@ -127,6 +127,14 @@ class BalatroEngine:
         with self._game(run) as G:
             return presenter.game_view(run, G)
 
+    def load(self, run: Run) -> tuple[Progress, RunStats]:
+        try:
+            G = self._replay(run)
+        except ReplayFailed as e:
+            raise IllegalAction(str(e)) from e
+        self._put(run.id, run.version, G)
+        return presenter.progress(G), presenter.run_stats(G)
+
     def run_stats(self, run: Run) -> RunStats:
         with self._game(run) as G:
             return presenter.run_stats(G)

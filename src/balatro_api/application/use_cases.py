@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from balatro_api.domain import GameNotFound, GameSettings, Run
+from balatro_api.domain import Command, GameNotFound, GameSettings, Phase, Progress, Run
 
 from .dto import (
     ActionResult,
@@ -27,6 +27,7 @@ from .dto import (
     GlobalStats,
     HandPreview,
     HistoryView,
+    ImportedRun,
     Leaderboard,
     LeaderboardEntry,
     LeaderboardName,
@@ -37,7 +38,7 @@ from .dto import (
     PlayerStats,
     SettingsView,
 )
-from .errors import DebugCommandsDisabled
+from .errors import DebugCommandsDisabled, ImportForbidden
 from .locks import RunLocks
 from .ports import Authenticator, BoardRow, Clock, GameEngine, GameRepository, IdGenerator, Outcome
 from .statistics import player_stats, score
@@ -82,6 +83,37 @@ class CreateGame:
         run = Run(id=run_id, settings=settings, engine_version=self.engine.version, progress=progress,
                   created_at=now, updated_at=now, owner=player.id, owner_name=player.name)
         run.stats = self.engine.run_stats(run)
+        self.games.add(run)
+        return self.engine.view(run)
+
+
+class ImportGame:
+    """Rebuild a run from its settings and commands, as the caller's run (to
+    reproduce a bug report).  Only for admins, or on a server with debug
+    commands.  The new run doesn't count for statistics."""
+
+    def __init__(self, engine: GameEngine, games: GameRepository, ids: IdGenerator, clock: Clock,
+                 debug_enabled: bool, admins: Sequence[str]) -> None:
+        self.engine, self.games, self.ids, self.clock = engine, games, ids, clock
+        self.debug_enabled, self.admins = debug_enabled, frozenset(admins)
+
+    def __call__(self, player: Player, request: ImportedRun) -> GameView:
+        if not (self.debug_enabled or player.id in self.admins):
+            raise ImportForbidden()
+        settings = self.engine.check_settings(GameSettings(
+            seed=request.seed, deck=request.deck, stake=request.stake, challenge=request.challenge,
+            game_speed=request.game_speed, seeded=True))
+        now = self.clock.now()
+        run = Run(id=self.ids.new_id(), settings=settings, engine_version=self.engine.version,
+                  progress=Progress(Phase.BLIND_SELECT, 1, 0, 0, False),  # (replaced by the replay's)
+                  created_at=now, updated_at=now,
+                  commands=[Command(c) for c in request.commands], owner=player.id, owner_name=player.name,
+                  debug=True)
+        try:
+            run.progress, run.stats = self.engine.load(run)
+        except Exception:
+            self.engine.forget(run.id)
+            raise
         self.games.add(run)
         return self.engine.view(run)
 
@@ -237,6 +269,7 @@ class UseCases:
 
     authenticate: Authenticate
     create_game: CreateGame
+    import_game: ImportGame
     get_game: GetGame
     list_games: ListGames
     delete_game: DeleteGame
@@ -252,5 +285,5 @@ class UseCases:
 
 
 __all__ = ["Authenticate", "CreateGame", "DeleteGame", "GetCatalog", "GetGame", "GetGlobalStats", "GetHistory",
-           "GetLeaderboard", "GetLegalActions", "GetPlayerStats", "ListGames", "PlayAction", "PreviewHand",
-           "RunDebugCommand", "UseCases"]
+           "GetLeaderboard", "GetLegalActions", "GetPlayerStats", "ImportGame", "ListGames", "PlayAction",
+           "PreviewHand", "RunDebugCommand", "UseCases"]

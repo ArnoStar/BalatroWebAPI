@@ -9,7 +9,13 @@ from fastapi import APIRouter, Body, Query, Response, status
 
 from balatro_api.application.dto import ActionResult, GameSummaryView, GameView, HandPreview, HistoryView, LegalAction
 from balatro_api.presentation.http.deps import CurrentPlayer, Uses
-from balatro_api.presentation.http.schemas import ActionRequest, DebugRequest, NewGameRequest, PreviewRequest
+from balatro_api.presentation.http.schemas import (
+    ActionRequest,
+    DebugRequest,
+    ImportGameRequest,
+    NewGameRequest,
+    PreviewRequest,
+)
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -20,6 +26,20 @@ def create_game(body: NewGameRequest, player: CurrentPlayer, uses: Uses, respons
     screen). The same seed, deck, stake and choices always give the same run,
     as in the game."""
     game = uses.create_game(player, body.to_dto())
+    response.headers["Location"] = f"/api/v1/games/{game.id}"
+    return game
+
+
+@router.post("/import", status_code=status.HTTP_201_CREATED, response_model=GameView,
+             summary="Rebuild a run from its history (admins, or debug servers)")
+def import_game(body: ImportGameRequest, player: CurrentPlayer, uses: Uses, response: Response) -> GameView:
+    """Replays a run's settings and commands (``GET /games/{id}/history``, or
+    a bug report's) as a new run of the caller's, to reproduce what happened.
+    Allowed for the accounts in ``BALATRO_API_ADMINS``, or anyone on a server
+    with debug commands (``403 import_forbidden`` otherwise). A command that
+    doesn't replay is ``409 illegal_action``. The run doesn't count for
+    statistics."""
+    game = uses.import_game(player, body.to_dto())
     response.headers["Location"] = f"/api/v1/games/{game.id}"
     return game
 

@@ -22,6 +22,8 @@ class Settings:
     auth_jwks_url: str | None = None
     auth_issuer: str | None = None
     auth_audience: str = "balatro"
+    # account ids (the identity service's) that may import runs, to reproduce bug reports
+    admins: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.database != "memory" and not self.database.startswith(("postgresql://", "postgres://")):
@@ -49,4 +51,5 @@ class Settings:
             auth_jwks_url=env.get("BALATRO_API_AUTH_JWKS_URL") or None,
             auth_issuer=(env.get("BALATRO_API_AUTH_ISSUER") or "").rstrip("/") or None,
             auth_audience=env.get("BALATRO_API_AUTH_AUDIENCE") or d.auth_audience,
+            admins=tuple(a.strip() for a in env.get("BALATRO_API_ADMINS", "").split(",") if a.strip()),
         )

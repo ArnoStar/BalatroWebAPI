@@ -259,7 +259,8 @@ def game_view(run: Run, G: Game) -> GameView:
     return GameView(
         id=run.id,
         version=run.version,
-        settings=SettingsView(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed),
+        settings=SettingsView(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
+                              seeded=s.seeded),
         phase=phase(G),
         state=STATE_NAMES.get(G.STATE, str(G.STATE)),
         won=bool(GAME.won),

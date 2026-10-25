@@ -162,6 +162,7 @@ game.
 | `BALATRO_API_AUTH_JWKS_URL` | unset (sign-in off) | The identity service's `/.well-known/jwks.json` |
 | `BALATRO_API_AUTH_ISSUER` | | Required with the JWKS URL: the identity service's `PUBLIC_URL`, exactly |
 | `BALATRO_API_AUTH_AUDIENCE` | `balatro` | The identity service's `JWT_AUDIENCE` |
+| `BALATRO_API_ADMINS` | none | Account ids that may rebuild runs from a history (`POST /games/import`, for bug reports) |
 
 ## Docker
 

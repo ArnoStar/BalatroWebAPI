@@ -60,6 +60,11 @@ class GameEngine(Protocol):
         """What the run has added to the player's statistics so far."""
         ...
 
+    def load(self, run: Run) -> tuple[Progress, RunStats]:
+        """Replay a run's commands (a run rebuilt from its history).  Raises
+        IllegalAction naming the first command that doesn't replay."""
+        ...
+
     def legal_actions(self, run: Run) -> list[LegalAction]: ...
 
     def apply(self, run: Run, action: PlayerAction) -> Outcome:

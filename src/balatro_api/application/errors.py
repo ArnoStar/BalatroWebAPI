@@ -22,3 +22,10 @@ class DebugCommandsDisabled(DomainError):
 
     def __init__(self) -> None:
         super().__init__("debug commands are disabled on this server")
+
+
+class ImportForbidden(DomainError):
+    code = "import_forbidden"
+
+    def __init__(self) -> None:
+        super().__init__("importing a run needs an admin account (BALATRO_API_ADMINS) or debug commands")

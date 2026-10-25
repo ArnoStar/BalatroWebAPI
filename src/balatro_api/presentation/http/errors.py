@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from balatro_api.application.errors import AuthUnavailable, DebugCommandsDisabled, NotAuthenticated
+from balatro_api.application.errors import AuthUnavailable, DebugCommandsDisabled, ImportForbidden, NotAuthenticated
 from balatro_api.domain import DomainError, GameNotFound, IllegalAction, InvalidGameSettings, VersionConflict
 
 log = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ STATUS: list[tuple[type[DomainError], int]] = [
     (IllegalAction, 409),  # (and GameOver): not possible in the game's current state
     (InvalidGameSettings, 422),
     (DebugCommandsDisabled, 403),
+    (ImportForbidden, 403),
     (NotAuthenticated, 401),
     (AuthUnavailable, 503),
 ]
@@ -50,6 +51,8 @@ def install(app: FastAPI) -> None:
         return problem(422, "invalid_request", "the request doesn't match the schema", errors=errors)
 
     @app.exception_handler(Exception)
-    async def unexpected(_: Request, exc: Exception) -> JSONResponse:
-        log.exception("unexpected error", exc_info=exc)
-        return problem(500, "internal_error", "unexpected server error")
+    async def unexpected(request: Request, exc: Exception) -> JSONResponse:
+        rid = getattr(request.state, "request_id", None)
+        log.exception("unexpected error in %s %s [%s]", request.method, request.url.path, rid, exc_info=exc)
+        headers = {"X-Request-ID": rid} if rid else None
+        return problem(500, "internal_error", "unexpected server error", headers, request_id=rid)
