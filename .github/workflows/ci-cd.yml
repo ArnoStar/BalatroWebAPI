@@ -17,6 +17,18 @@ jobs:
   check:
     name: Tests, ruff, mypy
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: balatro
+          POSTGRES_PASSWORD: balatro
+          POSTGRES_DB: balatro
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U balatro -d balatro" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      BALATRO_API_TEST_DATABASE_URL: postgresql://balatro:balatro@localhost:5432/balatro
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

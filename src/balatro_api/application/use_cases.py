@@ -24,21 +24,28 @@ from .dto import (
     Catalog,
     GameSummaryView,
     GameView,
+    GlobalStats,
     HandPreview,
     HistoryView,
+    Leaderboard,
+    LeaderboardEntry,
+    LeaderboardName,
     LegalAction,
     NewGame,
     Player,
     PlayerAction,
+    PlayerStats,
     SettingsView,
 )
 from .errors import DebugCommandsDisabled
 from .locks import RunLocks
-from .ports import Authenticator, Clock, GameEngine, GameRepository, IdGenerator, Outcome
+from .ports import Authenticator, BoardRow, Clock, GameEngine, GameRepository, IdGenerator, Outcome
+from .statistics import player_stats, score
 
 
 def settings_view(s: GameSettings) -> SettingsView:
-    return SettingsView(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed)
+    return SettingsView(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
+                        seeded=s.seeded)
 
 
 def owned_run(games: GameRepository, player: Player, game_id: str) -> Run:
@@ -67,12 +74,14 @@ class CreateGame:
     def __call__(self, player: Player, request: NewGame) -> GameView:
         settings = self.engine.check_settings(GameSettings(
             seed=request.seed if request.seed is not None else self.engine.random_seed(),
-            deck=request.deck, stake=request.stake, challenge=request.challenge, game_speed=request.game_speed))
+            deck=request.deck, stake=request.stake, challenge=request.challenge, game_speed=request.game_speed,
+            seeded=request.seed is not None))
         run_id = self.ids.new_id()
         progress = self.engine.start(run_id, settings)
         now = self.clock.now()
         run = Run(id=run_id, settings=settings, engine_version=self.engine.version, progress=progress,
-                  created_at=now, updated_at=now, owner=player.id)
+                  created_at=now, updated_at=now, owner=player.id, owner_name=player.name)
+        run.stats = self.engine.run_stats(run)
         self.games.add(run)
         return self.engine.view(run)
 
@@ -92,7 +101,8 @@ class ListGames:
     def __call__(self, player: Player, limit: int = 50, offset: int = 0) -> list[GameSummaryView]:
         return [GameSummaryView(id=r.id, version=r.version, settings=settings_view(r.settings), phase=r.progress.phase,
                                 ante=r.progress.ante, round=r.progress.round, dollars=r.progress.dollars,
-                                won=r.progress.won, created_at=r.created_at, updated_at=r.updated_at)
+                                won=r.progress.won, created_at=r.created_at, updated_at=r.updated_at,
+                                best_hand=score(r.stats.best_hand), counted=r.counts)
                 for r in self.games.list(player.id, limit, offset)]
 
 
@@ -138,14 +148,15 @@ class _ChangeRun:
         self.engine, self.games, self.locks, self.clock = engine, games, locks, clock
 
     def _change(self, player: Player, game_id: str, expected_version: int | None,
-                play: Callable[[Run], Outcome]) -> ActionResult:
+                play: Callable[[Run], Outcome], debug: bool = False) -> ActionResult:
         with self.locks.hold(game_id):
             run = owned_run(self.games, player, game_id)
             run.check_version(expected_version)
             run.check_playable()
             outcome = play(run)
             version = run.version
-            run.record(outcome.command, outcome.progress, self.clock.now())
+            run.record(outcome.command, outcome.progress, self.clock.now(), stats=outcome.stats, debug=debug)
+            run.owner_name = player.name or run.owner_name
             self.games.save(run, expected_version=version)
             self.engine.commit(run, outcome)
             return ActionResult(game=self.engine.view(run), events=outcome.events)
@@ -170,7 +181,8 @@ class RunDebugCommand(_ChangeRun):
                  expected_version: int | None = None) -> ActionResult:
         if not self.enabled:
             raise DebugCommandsDisabled()
-        return self._change(player, game_id, expected_version, lambda run: self.engine.apply_debug(run, command))
+        return self._change(player, game_id, expected_version, lambda run: self.engine.apply_debug(run, command),
+                            debug=True)
 
 
 class GetCatalog:
@@ -179,6 +191,44 @@ class GetCatalog:
 
     def __call__(self) -> Catalog:
         return self.engine.catalog()
+
+
+class GetPlayerStats:
+    """The caller's profile statistics (their counted runs)."""
+
+    def __init__(self, games: GameRepository, clock: Clock) -> None:
+        self.games, self.clock = games, clock
+
+    def __call__(self, player: Player) -> PlayerStats:
+        return player_stats(self.games.runs_of(player.id), self.clock.now())
+
+
+class GetLeaderboard:
+    """Everyone's best counted runs. Only display names are shown: never
+    another player's id or run."""
+
+    def __init__(self, games: GameRepository) -> None:
+        self.games = games
+
+    def __call__(self, player: Player, board: LeaderboardName, deck: str | None = None, stake: int | None = None,
+                 limit: int = 50) -> Leaderboard:
+        page = self.games.leaderboard(board, deck, stake, limit, player.id)
+
+        def entry(r: BoardRow) -> LeaderboardEntry:
+            return LeaderboardEntry(rank=r.rank, player=r.name, you=r.owner == player.id, value=score(r.value),
+                                    deck=r.deck, stake=r.stake, won=r.won, achieved_at=r.at)
+
+        top = [entry(r) for r in page.rows[:limit]]  # (the caller's row comes last when it isn't in the top)
+        mine = next((entry(r) for r in page.rows if r.owner == player.id), None)
+        return Leaderboard(board=board, deck=deck, stake=stake, players=page.players, entries=top, you=mine)
+
+
+class GetGlobalStats:
+    def __init__(self, games: GameRepository) -> None:
+        self.games = games
+
+    def __call__(self, player: Player) -> GlobalStats:
+        return self.games.global_stats()
 
 
 @dataclass(frozen=True)
@@ -196,7 +246,11 @@ class UseCases:
     history: GetHistory
     debug_command: RunDebugCommand
     catalog: GetCatalog
+    player_stats: GetPlayerStats
+    leaderboard: GetLeaderboard
+    global_stats: GetGlobalStats
 
 
-__all__ = ["Authenticate", "CreateGame", "DeleteGame", "GetCatalog", "GetGame", "GetHistory", "GetLegalActions",
-           "ListGames", "PlayAction", "PreviewHand", "RunDebugCommand", "UseCases"]
+__all__ = ["Authenticate", "CreateGame", "DeleteGame", "GetCatalog", "GetGame", "GetGlobalStats", "GetHistory",
+           "GetLeaderboard", "GetLegalActions", "GetPlayerStats", "ListGames", "PlayAction", "PreviewHand",
+           "RunDebugCommand", "UseCases"]

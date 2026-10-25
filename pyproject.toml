@@ -5,8 +5,10 @@ description = "HTTP API to play Balatro runs, with the exact game logic of Balat
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "balatroengine>=0.3.0",
+    "balatroengine>=0.4.0",
     "fastapi>=0.115",
+    "psycopg-pool>=3.2",
+    "psycopg[binary]>=3.2",
     "pyjwt[crypto]>=2.10",
     "uvicorn>=0.30",
 ]
@@ -23,7 +25,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-balatroengine = { git = "https://github.com/ArnoStar/BalatroEngine.git", tag = "v0.3.0" }
+balatroengine = { git = "https://github.com/ArnoStar/BalatroEngine.git", tag = "v0.4.0" }
 
 [build-system]
 requires = ["setuptools>=68"]

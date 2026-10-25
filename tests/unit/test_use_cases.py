@@ -21,6 +21,7 @@ from balatro_api.domain import (
     Phase,
     Progress,
     Run,
+    RunStats,
     VersionConflict,
 )
 from balatro_api.infrastructure.persistence import InMemoryGameRepository
@@ -38,6 +39,7 @@ class FakeEngine:
         self.forgotten: list[str] = []
         self.fail: Exception | None = None
         self.next_phase = Phase.PLAYING
+        self.stats = RunStats()
 
     def random_seed(self) -> str:
         return "RANDOM12"
@@ -48,16 +50,20 @@ class FakeEngine:
     def start(self, run_id: str, settings: GameSettings) -> Progress:
         return START
 
+    def run_stats(self, run: Run) -> RunStats:
+        return RunStats(most_money=4)
+
     def view(self, run: Run) -> Any:
         return {"id": run.id, "version": run.version}
 
     def apply(self, run: Run, action: PlayerAction) -> Outcome:
         if self.fail:
             raise self.fail
-        return Outcome(Command({"cmd": action.type}), Progress(self.next_phase, 1, 1, 4, False), [], object())
+        return Outcome(Command({"cmd": action.type}), Progress(self.next_phase, 1, 1, 4, False), self.stats, [],
+                       object())
 
     def apply_debug(self, run: Run, command: dict[str, Any]) -> Outcome:
-        return Outcome(Command(command), START, [], object())
+        return Outcome(Command(command), START, RunStats(), [], object())
 
     def commit(self, run: Run, outcome: Outcome) -> None:
         self.committed.append((run.id, run.version))

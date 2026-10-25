@@ -26,7 +26,7 @@ from balatro.rng import SEED_ALPHABET, normalize_seed
 from balatro_api.application.dto import Catalog, GameView, HandPreview, LegalAction, PlayerAction
 from balatro_api.application.locks import RunLocks
 from balatro_api.application.ports import Outcome
-from balatro_api.domain import Command, GameSettings, IllegalAction, InvalidGameSettings, Progress, Run
+from balatro_api.domain import Command, GameSettings, IllegalAction, InvalidGameSettings, Progress, Run, RunStats
 
 from . import presenter
 from .catalog import build_catalog
@@ -72,7 +72,7 @@ class BalatroEngine:
             if deck not in {c.key for c in data.P_CENTER_POOLS["Back"]}:
                 raise InvalidGameSettings(f"unknown deck {settings.deck!r}")
         return GameSettings(seed=normalize_seed(settings.seed), deck=deck, stake=stake, challenge=settings.challenge,
-                            game_speed=settings.game_speed)
+                            game_speed=settings.game_speed, seeded=settings.seeded)
 
     # ------------------------------------------------------------ games
     @staticmethod
@@ -127,6 +127,10 @@ class BalatroEngine:
         with self._game(run) as G:
             return presenter.game_view(run, G)
 
+    def run_stats(self, run: Run) -> RunStats:
+        with self._game(run) as G:
+            return presenter.run_stats(G)
+
     def legal_actions(self, run: Run) -> list[LegalAction]:
         with self._game(run) as G:
             return legal_actions(G)
@@ -163,7 +167,7 @@ class BalatroEngine:
             raise IllegalAction(str(e)) from e
         finally:
             G.stop_feedback()
-        return Outcome(command=Command(command), progress=presenter.progress(G),
+        return Outcome(command=Command(command), progress=presenter.progress(G), stats=presenter.run_stats(G),
                        events=presenter.feedback_events(feedback), state=G)
 
     def apply(self, run: Run, action: PlayerAction) -> Outcome:

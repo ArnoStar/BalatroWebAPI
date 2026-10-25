@@ -12,7 +12,7 @@ from balatro_api import __version__
 from balatro_api.application.use_cases import UseCases
 
 from . import errors
-from .routes import games, meta
+from .routes import games, meta, stats
 
 DESCRIPTION = """
 Play Balatro runs over HTTP. The game logic is BalatroEngine's, which
@@ -26,6 +26,10 @@ A run waits for one decision at a time (`phase`). Read it with
 When the server runs with sign-in (`GET /health` says `"auth": "required"`),
 every game route needs an access token from the identity service
 (`Authorization: Bearer ...`), and a player only sees their own runs.
+
+Statistics (`/stats/me`, `/stats/global`, `/leaderboards/{board}`) count the
+runs as the game's profile does: a run whose seed the player chose, or a
+challenge, doesn't count (nor, here, a run that used debug commands).
 """
 
 
@@ -38,6 +42,7 @@ def create_app(use_cases: UseCases, cors_origins: Sequence[str] = ("*",)) -> Fas
     api = APIRouter(prefix="/api/v1")
     api.include_router(meta.router)
     api.include_router(games.router)
+    api.include_router(stats.router)
     app.include_router(api)
 
     @app.get("/", include_in_schema=False)

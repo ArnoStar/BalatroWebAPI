@@ -18,6 +18,7 @@ from enum import StrEnum
 from typing import Any
 
 from .errors import GameOver, InvalidGameSettings, VersionConflict
+from .stats import RunStats
 
 GAME_SPEEDS = (0.5, 1.0, 2.0, 4.0)
 # who owns the runs when the server runs without sign-in (and the runs made
@@ -30,13 +31,15 @@ SEED_PATTERN = re.compile(r"^[A-Za-z0-9]{1,8}$")
 class GameSettings:
     """What a run is started with.  ``game_speed`` is the game's speed
     setting: it changes when animated effects land, which decides a few races
-    (as in the game), so it is part of the run."""
+    (as in the game), so it is part of the run.  ``seeded``: the player chose
+    the seed (as in the game, such a run doesn't count for statistics)."""
 
     seed: str
     deck: str = "b_red"
     stake: int = 1
     challenge: str | None = None
     game_speed: float = 1.0
+    seeded: bool = False
 
     def __post_init__(self) -> None:
         if not SEED_PATTERN.match(self.seed):
@@ -92,6 +95,19 @@ class RunSummary:
     created_at: datetime
     updated_at: datetime
     owner: str = ANONYMOUS_PLAYER
+    stats: RunStats = field(default_factory=RunStats)
+    debug: bool = False
+
+    @property
+    def counts(self) -> bool:
+        return counts(self.settings, self.debug)
+
+
+def counts(settings: GameSettings, debug: bool) -> bool:
+    """Whether a run counts for statistics and leaderboards: as in the game,
+    not when the player chose the seed or plays a challenge; nor when a debug
+    command was used."""
+    return not settings.seeded and settings.challenge is None and not debug
 
 
 @dataclass
@@ -106,6 +122,12 @@ class Run:
     owner: str = ANONYMOUS_PLAYER
     """The player whose run it is (their account id at the identity service).
     Nobody else can see or play it."""
+    owner_name: str | None = None
+    """The owner's display name when they last played it (for leaderboards)."""
+    stats: RunStats = field(default_factory=RunStats)
+    """What the run added to the player's statistics (derived, like ``progress``)."""
+    debug: bool = False
+    """A debug command was used: the run doesn't count for statistics."""
 
     @property
     def version(self) -> int:
@@ -123,12 +145,20 @@ class Run:
         if self.progress.over:
             raise GameOver()
 
-    def record(self, command: Command, progress: Progress, at: datetime) -> None:
+    @property
+    def counts(self) -> bool:
+        return counts(self.settings, self.debug)
+
+    def record(self, command: Command, progress: Progress, at: datetime, stats: RunStats | None = None,
+               debug: bool = False) -> None:
         self.check_playable()
         self.commands.append(command)
         self.progress = progress
         self.updated_at = at
+        if stats is not None:
+            self.stats = stats
+        self.debug = self.debug or debug
 
     def summary(self) -> RunSummary:
         return RunSummary(self.id, self.settings, self.progress, self.version, self.created_at, self.updated_at,
-                          self.owner)
+                          self.owner, self.stats, self.debug)

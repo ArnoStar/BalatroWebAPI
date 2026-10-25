@@ -13,8 +13,11 @@ from .application.use_cases import (
     DeleteGame,
     GetCatalog,
     GetGame,
+    GetGlobalStats,
     GetHistory,
+    GetLeaderboard,
     GetLegalActions,
+    GetPlayerStats,
     ListGames,
     PlayAction,
     PreviewHand,
@@ -24,7 +27,7 @@ from .application.use_cases import (
 from .config import Settings
 from .infrastructure.auth import AnonymousAuthenticator, JwtAuthenticator
 from .infrastructure.engine import BalatroEngine
-from .infrastructure.persistence import InMemoryGameRepository, SqliteGameRepository
+from .infrastructure.persistence import InMemoryGameRepository, PostgresGameRepository
 from .infrastructure.system import SystemClock, UuidGenerator
 
 log = logging.getLogger(__name__)
@@ -37,12 +40,19 @@ def build_authenticator(settings: Settings) -> Authenticator:
     return AnonymousAuthenticator()
 
 
+def build_repository(settings: Settings) -> GameRepository:
+    if settings.database == "memory":
+        log.warning("runs are kept in memory (BALATRO_API_DATABASE_URL=memory): they are lost when the server stops")
+        return InMemoryGameRepository()
+    return PostgresGameRepository(settings.database)
+
+
 def build_use_cases(settings: Settings, engine: GameEngine | None = None, games: GameRepository | None = None,
                     ids: IdGenerator | None = None, clock: Clock | None = None,
                     authenticator: Authenticator | None = None) -> UseCases:
     engine = engine or BalatroEngine(cache_size=settings.cache_size)
     if games is None:
-        games = InMemoryGameRepository() if settings.database == "memory" else SqliteGameRepository(settings.database)
+        games = build_repository(settings)
     ids = ids or UuidGenerator()
     clock = clock or SystemClock()
     locks = RunLocks()
@@ -58,4 +68,7 @@ def build_use_cases(settings: Settings, engine: GameEngine | None = None, games:
         history=GetHistory(games),
         debug_command=RunDebugCommand(engine, games, locks, clock, enabled=settings.debug_commands),
         catalog=GetCatalog(engine),
+        player_stats=GetPlayerStats(games, clock),
+        leaderboard=GetLeaderboard(games),
+        global_stats=GetGlobalStats(games),
     )

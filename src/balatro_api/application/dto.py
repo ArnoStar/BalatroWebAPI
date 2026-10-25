@@ -22,6 +22,7 @@ CardKind = Literal["playing_card", "joker", "tarot", "planet", "spectral", "vouc
 AreaName = Literal["deck", "hand", "play", "discard", "jokers", "consumables", "shop", "vouchers", "boosters", "pack"]
 BlindSlot = Literal["Small", "Big", "Boss"]
 Number = int | float
+Score = int | float | str  # a score; "inf" or "nan" past the largest number (the game's "naneinf")
 
 
 # ------------------------------------------------------------------ input
@@ -253,6 +254,7 @@ class SettingsView:
     stake: int
     challenge: str | None
     game_speed: float
+    seeded: bool = False  # the player chose the seed: the run doesn't count for statistics
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -302,6 +304,8 @@ class GameSummaryView:
     won: bool
     created_at: datetime
     updated_at: datetime
+    best_hand: Score = 0  # the run's best single hand
+    counted: bool = True  # the run counts for statistics and leaderboards (not seeded, no challenge, no debug)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -555,3 +559,179 @@ class Player:
 
     id: str
     name: str | None = None
+
+
+# ------------------------------------------------------------------ statistics
+# As in the game, statistics only count runs whose seed the player didn't
+# choose and that aren't challenges (and here, runs without debug commands).
+
+@dataclass(frozen=True, kw_only=True)
+class RunCounts:
+    total: int  # every run, counted or not
+    counted: int  # the runs that count for statistics
+    won: int  # counted runs that beat ante 8
+    lost: int  # counted runs that ended before winning
+    in_progress: int  # counted runs neither won nor over
+
+
+@dataclass(frozen=True, kw_only=True)
+class UsageCount:
+    key: str  # a poker hand name, or a consumable / voucher key (see GET /catalog)
+    count: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class HighScores:
+    """The game's profile high scores ("Best Hand", "Highest Round" ...)."""
+
+    best_hand: Score
+    highest_round: int
+    highest_ante: int
+    most_money: Number
+    boss_streak: int  # most boss blinds beaten in a row
+    best_win_streak: int  # most runs won in a row (in the order they were last played)
+    current_win_streak: int
+    most_played_hand: UsageCount | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class CareerStats:
+    """The game's career stats, added up over the counted runs."""
+
+    wins: int
+    losses: int
+    rounds: int  # blinds started
+    hands_played: int
+    cards_played: int
+    face_cards_played: int
+    cards_discarded: int
+    dollars_earned: Number
+    shop_dollars_spent: Number
+    shop_rerolls: int
+    jokers_sold: int
+    cards_sold: int
+    tarots_bought: int
+    planets_bought: int
+    playing_cards_bought: int
+    vouchers_bought: int
+    tarot_readings_used: int  # Arcana packs opened to the end
+    planetariums_used: int  # Celestial packs opened to the end
+
+
+@dataclass(frozen=True, kw_only=True)
+class JokerStats:
+    key: str
+    runs: int  # runs in which it was held at the end of a won round
+    rounds: int  # won rounds it was held in (the game's joker usage)
+    wins: int  # copies held when a run was won
+    losses: int  # copies held when a run was lost
+    best_stake_won: int | None  # the highest stake won with it (the game's joker stickers)
+
+
+@dataclass(frozen=True, kw_only=True)
+class StakeRecord:
+    stake: int
+    runs: int
+    wins: int
+    losses: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class DeckStats:
+    deck: str
+    runs: int
+    wins: int
+    losses: int
+    best_stake_won: int | None  # the game's deck stickers
+    stakes: list[StakeRecord]  # only the stakes played
+
+
+@dataclass(frozen=True, kw_only=True)
+class DayActivity:
+    date: str  # YYYY-MM-DD (UTC), the day runs were started
+    runs: int
+    wins: int  # runs started that day and won
+
+
+@dataclass(frozen=True, kw_only=True)
+class PlayerStats:
+    """A player's profile statistics, as the game's Profile > Stats screens
+    show them, from their counted runs."""
+
+    runs: RunCounts
+    high_scores: HighScores
+    career: CareerStats
+    hands: list[UsageCount]  # poker hands by times played (most first)
+    jokers: list[JokerStats]  # by rounds held (most first)
+    consumables: list[UsageCount]  # by times used
+    vouchers: list[UsageCount]  # by times redeemed
+    decks: list[DeckStats]  # by runs played
+    activity: list[DayActivity]  # the last 30 days, oldest first (days without runs included)
+
+
+LeaderboardName = Literal["best_hand", "highest_ante", "highest_round", "most_money", "boss_streak", "wins"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class LeaderboardEntry:
+    rank: int  # 1 = the best; tied values share a rank
+    player: str | None  # the player's display name (None: no name)
+    you: bool  # this is the caller's entry
+    value: Score
+    deck: str | None  # where the value was reached (None for "wins")
+    stake: int | None
+    won: bool | None  # that run beat ante 8 (None for "wins")
+    achieved_at: datetime  # when that run was last played (for "wins": the latest win)
+
+
+@dataclass(frozen=True, kw_only=True)
+class Leaderboard:
+    """The best counted run of each player (or, for "wins", each player's
+    number of won runs), optionally on one deck and/or stake."""
+
+    board: LeaderboardName
+    deck: str | None
+    stake: int | None
+    players: int  # players on the board
+    entries: list[LeaderboardEntry]  # the top ones
+    you: LeaderboardEntry | None  # the caller's entry, even outside the top (None: not on the board)
+
+
+@dataclass(frozen=True, kw_only=True)
+class DeckPopularity:
+    deck: str
+    runs: int
+    wins: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class StakePopularity:
+    stake: int
+    runs: int
+    wins: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class JokerPopularity:
+    key: str
+    runs: int  # runs that held it at the end of a won round
+    win_runs: int  # won runs that held it when they were won
+
+
+@dataclass(frozen=True, kw_only=True)
+class GlobalStats:
+    """Everyone's counted runs together."""
+
+    players: int
+    runs: int
+    won: int
+    lost: int
+    hands_played: int
+    cards_played: int
+    dollars_earned: Number
+    best_hand: Score
+    highest_ante: int
+    decks: list[DeckPopularity]  # by runs
+    stakes: list[StakePopularity]  # by stake
+    jokers: list[JokerPopularity]  # the 20 most held
+    hands: list[UsageCount]  # poker hands by times played

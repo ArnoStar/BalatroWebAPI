@@ -35,7 +35,7 @@ flowchart LR
     end
     subgraph infrastructure["infrastructure"]
         engine["engine/ (BalatroEngine adapter)"]
-        persistence["persistence/ (SQLite, memory)"]
+        persistence["persistence/ (PostgreSQL, memory)"]
         system["system (clock, ids)"]
     end
     subgraph application["application"]
@@ -61,7 +61,7 @@ flowchart LR
 |---|---|---|---|
 | Domain | `balatro_api.domain` | `Run` (settings, commands, progress, version rules), `GameSettings` (validation), `Phase`, `Progress`, `Command`, errors with stable codes | nothing else |
 | Application | `balatro_api.application` | one class per use case (`use_cases.py`), the DTOs returned and accepted (`dto.py`), the ports (`ports.py`), per-run locks | domain |
-| Infrastructure | `balatro_api.infrastructure` | `engine/`: the only code that imports `balatro`. `persistence/`: SQLite and in-memory repositories. `system.py`: clock and ids | domain, application, the engine |
+| Infrastructure | `balatro_api.infrastructure` | `engine/`: the only code that imports `balatro`. `persistence/`: PostgreSQL and in-memory repositories. `system.py`: clock and ids | domain, application, the engine |
 | Presentation | `balatro_api.presentation.http` | FastAPI routes, pydantic request schemas, mapping errors to problem details | domain, application, FastAPI |
 | Composition | `bootstrap.py`, `main.py`, `config.py` | picks the adapters, builds `UseCases`, creates the app from environment settings | everything |
 
@@ -115,22 +115,34 @@ contract.
 
 ### Infrastructure: persistence
 
-`SqliteGameRepository` keeps two tables:
+`PostgresGameRepository` (psycopg 3, a connection pool) keeps three tables:
 
 ```sql
-runs     (id, seed, deck, stake, challenge, game_speed, engine_version, version,
-          phase, ante, round, dollars, won, created_at, updated_at, owner)
-commands (run_id, seq, command)        -- command: JSON in the engine's format
+runs     (id, owner, seed, seeded, deck, stake, challenge, game_speed, engine_version, version,
+          phase, ante, round, dollars, won,                          -- Progress
+          debug, best_hand, furthest_ante, furthest_round, most_money, boss_streak,
+          stats JSONB,                                               -- RunStats
+          created_at, updated_at, counted GENERATED)
+commands (run_id, seq, command JSONB)  -- in the engine's format
+players  (id, name, updated_at)        -- display names, for leaderboards
 ```
 
 `save(run, expected_version)` runs in one transaction. It updates the run row
 only `WHERE version = expected_version`, then inserts the new commands. If
 another process saved first, no row matches and `VersionConflict` is raised.
-`phase`, `ante`, `round`, `dollars` and `won` are a cache for `GET /games`;
-the commands are the truth. `owner` is the player's account id, indexed with
-`updated_at` for `GET /games`. A database made before runs had owners gets the
-column on open, and its runs go to the anonymous player `local`.
-`InMemoryGameRepository` has the same behaviour, without the file.
+The commands are the truth: `Progress` (for `GET /games`) and `RunStats` (for
+statistics) are caches of what replaying them gives. The high scores have
+columns, which the leaderboards sort by (`DISTINCT ON (owner)`, then `RANK()`);
+the rest of the stats is a JSON document. `counted` is `NOT seeded AND
+challenge IS NULL AND NOT debug`. The schema comes from the numbered
+`MIGRATIONS`, applied once each under an advisory lock when a repository
+starts; a released migration is never changed, a new one is added.
+
+`InMemoryGameRepository` has the same behaviour without a database; its
+leaderboards and global statistics are `application.statistics`'s reference
+functions, and the PostgreSQL queries are tested against them.
+`infrastructure/persistence/sqlite_import.py` reads the SQLite database of
+earlier versions, for `python -m balatro_api.manage import-sqlite`.
 
 ### Players
 
@@ -204,7 +216,7 @@ The adapter keeps live engine games in an LRU cache (`BALATRO_API_CACHE_SIZE`,
 - **A cached game is used by one thread at a time.** The adapter holds its
   own per-run lock around every use, reads included: the engine's
   `legal_actions` and `preview_hand` swap state temporarily.
-- **Across processes** (several workers sharing one SQLite file), the
+- **Across processes** (several workers sharing one database), the
   optimistic `save` guarantees that only one action is accepted per version.
   The version tag on cached games guarantees that a process never uses a
   stale game.

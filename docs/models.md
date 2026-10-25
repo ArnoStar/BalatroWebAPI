@@ -117,6 +117,7 @@ A run as the player sees it. It is returned by `GET /games/{id}`,
 | `stake` | integer | 1-8 |
 | `challenge` | string \| null | challenge id |
 | `game_speed` | number | 0.5, 1, 2 or 4 |
+| `seeded` | boolean | the player chose the seed: the run doesn't count for statistics |
 
 ---
 
@@ -466,6 +467,19 @@ An entry of `GET /games`.
 |---|---|
 | `id`, `version`, `settings`, `phase`, `ante`, `round`, `dollars`, `won` | as in GameView |
 | `created_at`, `updated_at` | ISO 8601 date-time (UTC) |
+| `best_hand` | Score | the run's best single hand |
+| `counted` | boolean | the run counts for statistics and leaderboards |
+
+A **Score** is a number, or `"inf"` / `"nan"` past the largest number (the
+game writes "naneinf").
+
+## Statistics
+
+The fields are documented in the OpenAPI schema (`/docs`): `PlayerStats`
+(`runs`, `high_scores`, `career`, `hands`, `jokers`, `consumables`,
+`vouchers`, `decks`, `activity`), `Leaderboard` (`entries` of
+`LeaderboardEntry`: `rank`, `player`, `you`, `value`, `deck`, `stake`, `won`,
+`achieved_at`; and `you`), and `GlobalStats`.
 
 ## HistoryView
 

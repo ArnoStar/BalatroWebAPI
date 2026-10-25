@@ -18,12 +18,13 @@ The server listens on `http://127.0.0.1:8000`. Two pages come with it:
 - `http://127.0.0.1:8000/openapi.json`: the OpenAPI 3.1 schema, from which a
   front end can generate typed clients.
 
-Runs are stored in `balatro.db` in the current directory, so they survive a
-restart. These environment variables change the setup:
+Runs are stored in PostgreSQL, so they survive a restart: `make db` starts
+the database (BalatroFrontEnd's compose file, service `api-db`), and `make run`
+uses it. These environment variables change the setup:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `BALATRO_API_DATABASE` | `balatro.db` | Path of the SQLite file, or `memory` to keep runs in memory only |
+| `BALATRO_API_DATABASE_URL` | `postgresql://balatro:balatro@127.0.0.1:55433/balatro` | The PostgreSQL database, or `memory` to keep runs in memory only |
 | `BALATRO_API_CORS_ORIGINS` | `*` | Origins allowed to call the API from a browser, comma-separated (e.g. `http://localhost:5173`) |
 | `BALATRO_API_CACHE_SIZE` | `256` | How many runs keep their game in memory. Others are rebuilt from their history on the next request (slower, same result) |
 | `BALATRO_API_DEBUG_COMMANDS` | off | `1` enables `POST /games/{id}/debug` (give money, add jokers, force a boss...), for testing a front end |
