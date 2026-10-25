@@ -42,6 +42,12 @@ if [ ! -f "$root/BalatroFrontEnd/docker-compose.yml" ]; then
   exit 0
 fi
 cd "$root/BalatroFrontEnd"
+# this API keeps its runs in PostgreSQL: the api-db service of the front end's
+# compose file. Until that file has it, the running API stays as it is.
+if ! docker compose config --services | grep -qx api-db; then
+  echo "::warning::The API's code is on the server, but the running API was left as it is: the server's docker-compose.yml has no api-db service yet. Deploy BalatroFrontEnd (main), which starts api-db and this API."
+  exit 0
+fi
 docker compose up -d --build api
 cid="$(docker compose ps -q api)"
 status=starting
