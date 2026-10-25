@@ -300,12 +300,31 @@ oracle tools.
 
 ---
 
+## `POST /games/import`
+
+Rebuilds a run from its history, as a new run of the caller's: to see a bug
+report's run again (BalatroBugReportService keeps the history; the game's
+`/play/?report=<id>` calls this). Allowed for the developer and admin roles
+(and the accounts in `BALATRO_API_ADMINS`), or anyone on a server with debug
+commands; otherwise `403 import_forbidden`.
+
+**Body**: a history as `GET /games/{id}/history` gives it (extra fields are
+ignored), possibly with fewer commands: `{"settings": {"seed", "deck",
+"stake", "challenge", "game_speed"}, "commands": [...]}`. The commands are
+replayed with the engine; the first that doesn't replay is `409
+illegal_action` ("command #n doesn't replay"). **Response** `201`: the
+GameView, at version = the number of commands. The new run is seeded and
+counts as a debug run: it never counts for statistics.
+
+---
+
 ## `POST /games/{id}/debug`
 
 Applies a test helper. It exists only to help build and test a front end, for
 example to reach a late ante, try a given joker, or force a boss. It returns
 `403 debug_disabled` unless the server runs with
-`BALATRO_API_DEBUG_COMMANDS=1`. Helpers are recorded in the history like
+`BALATRO_API_DEBUG_COMMANDS=1` or the caller has the tester, developer or
+admin role. A run that used one doesn't count for statistics. Helpers are recorded in the history like
 actions, so the run still replays.
 
 **Body**: `{"command": {...}, "expected_version": null}`, where `command` is
@@ -360,6 +379,16 @@ their display name only (`null` without one), never by id or run.
 Everyone's counted runs together: players, runs, wins and losses, hands and
 cards played, money earned, the best hand and the highest ante, and runs per
 deck and per stake, the 20 most kept jokers and the poker hands played.
+
+---
+
+## Request ids
+
+Every response has an `X-Request-ID`: the one the client sent (8 to 64
+letters, digits, `.`, `_`, `-`), or a new one. The server logs one line per
+request with it (`balatro_api.requests`: method, path, status, time), and a
+`500` answer carries it as `request_id`. The game sends its own and records
+it, so a bug report points at the server's log lines.
 
 ---
 

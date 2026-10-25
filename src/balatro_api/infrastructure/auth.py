@@ -55,7 +55,9 @@ class JwtAuthenticator:
         if claims.get("typ") != "access":
             raise NotAuthenticated("not an access token")
         name = claims.get("name")
-        return Player(id=str(claims["sub"]), name=name if isinstance(name, str) else None)
+        roles = claims.get("roles")
+        roles = frozenset(r for r in roles if isinstance(r, str)) if isinstance(roles, list) else frozenset()
+        return Player(id=str(claims["sub"]), name=name if isinstance(name, str) else None, roles=roles)
 
 
 class AnonymousAuthenticator:

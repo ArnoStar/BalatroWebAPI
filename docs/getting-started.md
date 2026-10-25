@@ -32,6 +32,7 @@ uses it. These environment variables change the setup:
 | `BALATRO_API_AUTH_JWKS_URL` | unset | The identity service's key set (`http://127.0.0.1:8001/.well-known/jwks.json`): turns sign-in on |
 | `BALATRO_API_AUTH_ISSUER` | | With sign-in: the identity service's `PUBLIC_URL` (`http://localhost:8001`) |
 | `BALATRO_API_AUTH_AUDIENCE` | `balatro` | With sign-in: the tokens' audience |
+| `BALATRO_API_ADMINS` | none | Account ids that may rebuild runs from a history (`POST /games/import`), besides the developer and admin roles |
 
 By default the server runs **without sign-in**: anyone can call it, and every
 caller is the same player. To play as real players, run BalatroIndentityService

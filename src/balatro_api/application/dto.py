@@ -59,6 +59,19 @@ class NewGame:
     game_speed: float = 1.0
 
 
+@dataclass(frozen=True, kw_only=True)
+class ImportedRun:
+    """A run to rebuild from its settings and commands (a run's history, e.g.
+    from a bug report)."""
+
+    seed: str
+    deck: str = "b_red"
+    stake: int = 1
+    challenge: str | None = None
+    game_speed: float = 1.0
+    commands: tuple[dict[str, Any], ...] = ()
+
+
 # ------------------------------------------------------------------ cards
 @dataclass(frozen=True, kw_only=True)
 class Stickers:
@@ -559,6 +572,7 @@ class Player:
 
     id: str
     name: str | None = None
+    roles: frozenset[str] = frozenset()  # the token's ``roles`` (application/permissions.py)
 
 
 # ------------------------------------------------------------------ statistics

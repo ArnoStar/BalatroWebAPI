@@ -186,3 +186,10 @@ def test_global_stats_match_the_reference(repo):
     assert (got.players, got.runs, got.won, got.lost) == (4, 7, 3, 2)  # dave's runs don't count
     assert got.best_hand == "nan" and got.hands_played == 70 and got.dollars_earned == 353.5
     assert [h.key for h in got.hands] == ["Pair", "High Card", "Flush"]  # ties: the better hand first
+
+
+def test_an_unreachable_database_is_said_plainly():
+    from balatro_api.infrastructure.persistence import DatabaseUnavailable, PostgresGameRepository
+
+    with pytest.raises(DatabaseUnavailable, match="127.0.0.1:1/nowhere"):
+        PostgresGameRepository("postgresql://u:secret@127.0.0.1:1/nowhere", connect_timeout=1)

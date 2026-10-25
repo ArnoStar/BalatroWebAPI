@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from balatro_api.application.dto import NewGame, PlayerAction
+from balatro_api.application.dto import ImportedRun, NewGame, PlayerAction
 
 Version = Annotated[int | None, Field(
     default=None, ge=0,
@@ -149,3 +149,27 @@ class DebugRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     command: dict[str, Any]
     expected_version: Version = None
+
+
+class ImportSettings(BaseModel):
+    seed: str = Field(pattern=r"^[A-Za-z0-9]{1,8}$")
+    deck: str = "b_red"
+    stake: int = Field(1, ge=1, le=8)
+    challenge: str | None = None
+    game_speed: float = Field(1, json_schema_extra={"enum": [0.5, 1, 2, 4]})
+
+
+class ImportGameRequest(BaseModel):
+    """A run's history (``GET /games/{id}/history``: its settings and
+    commands), to rebuild it as a new run of the caller's."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    settings: ImportSettings
+    commands: list[dict[str, Any]] = Field(default_factory=list, max_length=20000,
+                                           description="engine commands, as in a history (indices into the areas)")
+
+    def to_dto(self) -> ImportedRun:
+        s = self.settings
+        return ImportedRun(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge,
+                           game_speed=float(s.game_speed), commands=tuple(self.commands))

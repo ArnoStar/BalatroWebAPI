@@ -19,9 +19,10 @@ from contextlib import contextmanager
 from typing import Any
 
 from psycopg import Connection, sql
+from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import DictRow, dict_row
 from psycopg.types.json import Jsonb
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 from balatro_api.application.dto import (
     DeckPopularity,
@@ -99,12 +100,27 @@ BOARD_COLUMNS = {"best_hand": "best_hand", "highest_ante": "furthest_ante", "hig
                  "most_money": "most_money", "boss_streak": "boss_streak"}
 
 
+class DatabaseUnavailable(RuntimeError):
+    """The database doesn't answer when the server starts."""
+
+
+def where(url: str) -> str:
+    """The database's address, without the password."""
+    try:
+        d = conninfo_to_dict(url)
+    except Exception:
+        return "(an unreadable URL)"
+    return f"{d.get('host', 'localhost')}:{d.get('port', 5432)}/{d.get('dbname', '')}"
+
+
 class PostgresGameRepository:
     """``url``: a libpq connection string (postgresql://user:password@host/db).
     ``schema``: keep the tables in this schema (made if needed) instead of the
-    default one."""
+    default one.  ``connect_timeout``: how long to wait for the database at
+    start (seconds) before raising DatabaseUnavailable."""
 
-    def __init__(self, url: str, schema: str | None = None, max_connections: int = 10) -> None:
+    def __init__(self, url: str, schema: str | None = None, max_connections: int = 10,
+                 connect_timeout: float = 30) -> None:
         self.schema = schema
 
         def configure(conn: Connection[Any]) -> None:
@@ -117,8 +133,15 @@ class PostgresGameRepository:
             with Connection.connect(url, autocommit=True) as conn:
                 conn.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(schema)))
         self._pool: ConnectionPool[Connection[DictRow]] = ConnectionPool(
-            url, min_size=1, max_size=max_connections, configure=configure, open=True,
+            url, min_size=1, max_size=max_connections, configure=configure, open=False,
             kwargs={"row_factory": dict_row}, connection_class=Connection[DictRow])
+        try:
+            self._pool.open(wait=True, timeout=connect_timeout)
+        except PoolTimeout:
+            self._pool.close()
+            raise DatabaseUnavailable(
+                f"PostgreSQL at {where(url)} doesn't answer (BALATRO_API_DATABASE_URL). In Docker, the api-db "
+                "service of BalatroFrontEnd's docker-compose.yml is the API's database") from None
         self.migrate()
 
     def close(self) -> None:

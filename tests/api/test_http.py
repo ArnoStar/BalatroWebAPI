@@ -168,3 +168,40 @@ def test_debug_commands_take_a_run_out_of_the_statistics(client):
     client.post(f"{API}/games/{game['id']}/debug", json={"command": {"cmd": "cheat", "dollars": 999}})
     assert client.get(f"{API}/stats/me").json()["runs"]["counted"] == 0
     assert client.get(f"{API}/leaderboards/most_money").json()["players"] == 0
+
+
+def test_request_ids(client):
+    r = client.get(f"{API}/health")
+    assert len(r.headers["x-request-id"]) == 32
+    r = client.get(f"{API}/health", headers={"X-Request-ID": "front-end-1234"})
+    assert r.headers["x-request-id"] == "front-end-1234"
+    r = client.get(f"{API}/health", headers={"X-Request-ID": "no spaces allowed!"})
+    assert r.headers["x-request-id"] != "no spaces allowed!"
+
+
+def test_import_a_run_from_its_history(client):
+    game = play_a_hand(client)
+    history = client.get(f"{API}/games/{game['id']}/history").json()
+    r = client.post(f"{API}/games/import", json=history)  # (a history is a valid body as it is)
+    assert r.status_code == 201, r.text
+    copy = r.json()
+    assert copy["id"] != game["id"] and copy["version"] == game["version"]
+    assert copy["settings"]["seeded"] is True
+    for key in ("hand", "jokers", "dollars", "round_score", "phase", "actions"):
+        assert copy[key] == game[key], key
+    # a prefix: the run as it was before the last command
+    r = client.post(f"{API}/games/import", json={**history, "commands": history["commands"][:1]})
+    assert r.json()["version"] == 1 and r.json()["phase"] == "playing"
+    # imported runs don't count; a command that doesn't replay is refused
+    assert all(not g["counted"] for g in client.get(f"{API}/games").json() if g["id"] != game["id"])
+    r = client.post(f"{API}/games/import", json={**history, "commands": [{"cmd": "cash_out"}]})
+    assert r.status_code == 409 and r.json()["code"] == "illegal_action" and "#0" in r.json()["detail"]
+
+
+def test_import_needs_an_admin_or_debug_commands():
+    off = TestClient(create_app(build_use_cases(Settings(database="memory"))))
+    body = {"settings": {"seed": "TESTSEED"}, "commands": [{"cmd": "select_blind"}]}
+    r = off.post(f"{API}/games/import", json=body)
+    assert r.status_code == 403 and r.json()["code"] == "import_forbidden"
+    admin = TestClient(create_app(build_use_cases(Settings(database="memory", admins=("local",)))))
+    assert admin.post(f"{API}/games/import", json=body).status_code == 201

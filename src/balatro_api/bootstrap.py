@@ -18,6 +18,7 @@ from .application.use_cases import (
     GetLeaderboard,
     GetLegalActions,
     GetPlayerStats,
+    ImportGame,
     ListGames,
     PlayAction,
     PreviewHand,
@@ -59,6 +60,7 @@ def build_use_cases(settings: Settings, engine: GameEngine | None = None, games:
     return UseCases(
         authenticate=Authenticate(authenticator or build_authenticator(settings)),
         create_game=CreateGame(engine, games, ids, clock),
+        import_game=ImportGame(engine, games, ids, clock, settings.debug_commands, settings.admins),
         get_game=GetGame(engine, games),
         list_games=ListGames(games),
         delete_game=DeleteGame(engine, games, locks),

@@ -52,7 +52,8 @@ domain  <-  application  <-  infrastructure, presentation  <-  bootstrap, main
 - `domain/`: `Run`, `GameSettings`, `Progress`, `Command`, errors with stable
   `code`s. Pure Python, with no imports from other layers.
 - `application/`: one class per use case (`use_cases.py`), the DTOs that are
-  the API contract (`dto.py`), and the ports it needs (`ports.py`:
+  the API contract (`dto.py`), what the identity service's roles allow here
+  (`permissions.py`), and the ports it needs (`ports.py`:
   `GameEngine`, `GameRepository`, `Authenticator`, `Clock`, `IdGenerator`).
   No web framework, no engine import.
 - `infrastructure/`: adapters for the ports. `engine/` is the **only** place

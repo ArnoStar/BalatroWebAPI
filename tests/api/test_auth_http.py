@@ -70,3 +70,23 @@ def test_leaderboards_show_names_not_ids(client: TestClient) -> None:
     mine = client.get(f"{API}/stats/me", headers=ALICE).json()
     assert mine["runs"]["total"] == 1 and mine["career"]["hands_played"] == 1
     assert client.get(f"{API}/stats/global", headers=ALICE).json()["players"] == 2
+
+
+def test_roles_allow_debug_commands_and_imports(client: TestClient) -> None:
+    """The client fixture runs with debug commands on: a server without them."""
+    settings = Settings(database="memory")
+    auth = JwtAuthenticator(FixedKeys(), ISSUER, AUDIENCE)
+    strict = TestClient(create_app(build_use_cases(settings, authenticator=auth)))
+    tester = {"Authorization": f"Bearer {token(sub='tess', roles=['tester'])}"}
+    dev = {"Authorization": f"Bearer {token(sub='dev', roles=['developer'])}"}
+    for who, debug, can_import in ((ALICE, 403, 403), (tester, 200, 403), (dev, 200, 201)):
+        game = strict.post(f"{API}/games", json={}, headers=who).json()
+        r = strict.post(f"{API}/games/{game['id']}/debug", json={"command": {"cmd": "cheat", "dollars": 50}},
+                        headers=who)
+        assert r.status_code == debug, (who, r.text)
+        body = {"settings": {"seed": "TESTSEED"}, "commands": [{"cmd": "select_blind"}]}
+        assert strict.post(f"{API}/games/import", json=body, headers=who).status_code == can_import
+    unknown = {"Authorization": f"Bearer {token(sub='x', roles=['emperor', 7])}"}
+    game = strict.post(f"{API}/games", json={}, headers=unknown).json()
+    assert strict.post(f"{API}/games/{game['id']}/debug", json={"command": {"cmd": "cheat", "dollars": 1}},
+                       headers=unknown).status_code == 403

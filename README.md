@@ -162,6 +162,7 @@ game.
 | `BALATRO_API_AUTH_JWKS_URL` | unset (sign-in off) | The identity service's `/.well-known/jwks.json` |
 | `BALATRO_API_AUTH_ISSUER` | | Required with the JWKS URL: the identity service's `PUBLIC_URL`, exactly |
 | `BALATRO_API_AUTH_AUDIENCE` | `balatro` | The identity service's `JWT_AUDIENCE` |
+| `BALATRO_API_ADMINS` | none | Account ids that may rebuild runs from a history, besides the roles (below); for a server without roles yet |
 
 ## Docker
 
@@ -177,6 +178,17 @@ build download through this machine's own connection: behind a VPN whose MTU
 is smaller than Docker's bridge (WireGuard: 1420), downloads from the bridge
 stall. To run it with the front end, see BalatroFrontEnd's
 `docker-compose.yml`.
+
+## Roles
+
+Access tokens name the account's roles (the identity service's `roles`
+claim). `application/permissions.py` says what they allow here:
+
+| Role | |
+|---|---|
+| `tester` | debug commands (`POST /games/{id}/debug`) on their own runs, even on a server without them; those runs don't count for statistics |
+| `developer` | the same, and rebuilding runs from histories (`POST /games/import`), to replay bug reports |
+| `admin` | everything |
 
 ## Storage
 

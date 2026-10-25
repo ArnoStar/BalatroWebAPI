@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from balatro_api import __version__
 from balatro_api.application.use_cases import UseCases
 
-from . import errors
+from . import errors, requests
 from .routes import games, meta, stats
 
 DESCRIPTION = """
@@ -37,8 +37,9 @@ def create_app(use_cases: UseCases, cors_origins: Sequence[str] = ("*",)) -> Fas
     app = FastAPI(title="Balatro Web API", version=__version__, description=DESCRIPTION)
     app.state.use_cases = use_cases
     app.add_middleware(CORSMiddleware, allow_origins=list(cors_origins), allow_methods=["*"], allow_headers=["*"],
-                       expose_headers=["ETag", "Location", "WWW-Authenticate"])
+                       expose_headers=["ETag", "Location", "WWW-Authenticate", "X-Request-ID"])
     errors.install(app)
+    requests.install(app)
     api = APIRouter(prefix="/api/v1")
     api.include_router(meta.router)
     api.include_router(games.router)

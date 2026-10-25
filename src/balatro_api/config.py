@@ -22,6 +22,8 @@ class Settings:
     auth_jwks_url: str | None = None
     auth_issuer: str | None = None
     auth_audience: str = "balatro"
+    # account ids (the identity service's) that may import runs, to reproduce bug reports
+    admins: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.database != "memory" and not self.database.startswith(("postgresql://", "postgres://")):
@@ -34,12 +36,20 @@ class Settings:
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
         d = cls()
         origins = env.get("BALATRO_API_CORS_ORIGINS")
+        database = env.get("BALATRO_API_DATABASE_URL")
+        legacy = env.get("BALATRO_API_DATABASE")  # the SQLite file of earlier versions
+        if not database and legacy and legacy != "memory":
+            raise ValueError(
+                f"BALATRO_API_DATABASE={legacy} (a SQLite file) is no longer read: runs are kept in PostgreSQL. "
+                "Set BALATRO_API_DATABASE_URL (BalatroFrontEnd's docker-compose.yml does, with its api-db service), "
+                "then copy the old runs once: python -m balatro_api.manage import-sqlite <file>")
         return cls(
-            database=env.get("BALATRO_API_DATABASE_URL") or d.database,
+            database=database or ("memory" if legacy == "memory" else d.database),
             cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()) if origins else d.cors_origins,
             cache_size=int(env.get("BALATRO_API_CACHE_SIZE", d.cache_size)),
             debug_commands=env.get("BALATRO_API_DEBUG_COMMANDS", "").lower() in ("1", "true", "yes", "on"),
             auth_jwks_url=env.get("BALATRO_API_AUTH_JWKS_URL") or None,
             auth_issuer=(env.get("BALATRO_API_AUTH_ISSUER") or "").rstrip("/") or None,
             auth_audience=env.get("BALATRO_API_AUTH_AUDIENCE") or d.auth_audience,
+            admins=tuple(a.strip() for a in env.get("BALATRO_API_ADMINS", "").split(",") if a.strip()),
         )
