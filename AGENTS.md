@@ -18,7 +18,7 @@ which reproduces the original game exactly.
 2. **The command history is the run.** A run is its `GameSettings` plus the
    ordered engine commands the player made. Everything else is derived by
    replaying them. Never store derived game state as the source of truth
-   (`Progress` is only a listing cache).
+   (`Progress` and `RunStats` are only caches, which a replay rebuilds).
 3. **Same seed and same choices give the same run.** Nothing may consume
    randomness or change timing outside the player's commands. Recording
    feedback, previews, views and legal-action lists must not change the game.
@@ -59,7 +59,7 @@ domain  <-  application  <-  infrastructure, presentation  <-  bootstrap, main
   that imports `balatro`: `adapter.py` handles the cache, replay and
   transactions, `commands.py` translates card ids to indices and builds legal
   actions, `presenter.py` builds the views, `catalog.py` the static data.
-  `persistence/` has SQLite and in-memory storage; `system.py` has the clock
+  `persistence/` has PostgreSQL and in-memory storage; `system.py` has the clock
   and ids; `auth.py` checks the identity service's tokens (PyJWT and its
   JWKS client) or makes everyone the anonymous player.
 - `presentation/http/`: FastAPI routes, request schemas (pydantic) and the
@@ -103,8 +103,16 @@ the test.
   test, including one where another player is refused
   (`tests/api/test_auth_http.py`; `tests/tokens.py` signs test tokens).
 - **A new storage backend:** implement `GameRepository`, including the
-  optimistic `save(run, expected_version)`. Run it through
-  `tests/integration/test_sqlite.py`'s parametrized tests.
+  optimistic `save(run, expected_version)` and the statistics queries, which
+  must answer like `application/statistics.py`. Run it through
+  `tests/integration/test_repositories.py`'s parametrized tests.
+- **A schema change:** add a migration at the end of `MIGRATIONS` in
+  `persistence/postgres.py`. Never edit a released one.
+- **A new statistic:** if the game counts it, the engine records it (in
+  `G.PROFILE`, verified against the game); read it in `presenter.run_stats`,
+  keep it in `RunStats`, and add it up in `application/statistics.py` (and in
+  SQL for global queries). Runs saved before it can be filled with
+  `python -m balatro_api.manage rebuild-stats`.
 
 ## The engine dependency
 
@@ -127,7 +135,8 @@ To develop against a local engine checkout, run
 
 ```
 make install                    # uv sync (Python 3.12+)
-make test                       # uv run pytest, all tests (about 5 s)
+make db                         # the PostgreSQL of BalatroFrontEnd's compose file (127.0.0.1:55433)
+make test                       # uv run pytest, all tests (about 10 s; PostgreSQL ones on `make db`'s database)
 make lint                       # uv run ruff check src tests
 make typecheck                  # uv run mypy
 make check                      # the three

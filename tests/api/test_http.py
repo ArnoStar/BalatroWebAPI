@@ -96,9 +96,9 @@ def test_debug_commands(client):
     assert r.status_code == 403 and r.json()["code"] == "debug_disabled"
 
 
-def test_runs_survive_a_server_restart(tmp_path):
-    settings = Settings(database=str(tmp_path / "runs.db"))
-    first = TestClient(create_app(build_use_cases(settings)))
+def test_runs_survive_a_server_restart(pg):
+    settings = Settings()
+    first = TestClient(create_app(build_use_cases(settings, games=pg())))
     game = first.post(f"{API}/games", json={"seed": "RESTART1", "deck": "b_yellow", "stake": 4}).json()
     rnd = random.Random(1)
     for _ in range(40):
@@ -110,7 +110,7 @@ def test_runs_survive_a_server_restart(tmp_path):
         r = first.post(f"{API}/games/{game['id']}/actions", json=a)
         if r.status_code == 200:
             game = r.json()["game"]
-    second = TestClient(create_app(build_use_cases(settings)))
+    second = TestClient(create_app(build_use_cases(settings, games=pg())))
     assert second.get(f"{API}/games/{game['id']}").json() == game
 
 
@@ -128,3 +128,43 @@ def test_without_sign_in_everyone_is_the_same_player(client):
     game = new_game(client)
     other = {"Authorization": "Bearer whatever"}  # ignored
     assert client.get(f"{API}/games/{game['id']}", headers=other).status_code == 200
+
+
+def play_a_hand(client: TestClient, **body: object) -> dict:
+    game = act(client, new_game(client, **body), type="select_blind")["game"]
+    return act(client, game, type="play", cards=[c["id"] for c in game["hand"][:5]])["game"]
+
+
+def test_statistics(client):
+    assert client.get(f"{API}/stats/me").json()["runs"]["total"] == 0
+    r = client.post(f"{API}/games", json={"deck": "b_red"})  # no seed given: an unseeded run
+    game = r.json()
+    assert game["settings"]["seeded"] is False
+    game = act(client, game, type="select_blind")["game"]
+    act(client, game, type="play", cards=[c["id"] for c in game["hand"][:5]])
+    play_a_hand(client)  # seeded (TESTSEED): doesn't count
+    me = client.get(f"{API}/stats/me").json()
+    assert me["runs"] == {"total": 2, "counted": 1, "won": 0, "lost": 0, "in_progress": 1}
+    assert me["career"]["hands_played"] == 1 and me["career"]["cards_played"] == 5
+    assert me["high_scores"]["best_hand"] > 0 and me["high_scores"]["highest_round"] == 1
+    assert sum(h["count"] for h in me["hands"]) == 1
+    assert me["decks"][0]["deck"] == "b_red" and me["decks"][0]["runs"] == 1
+    listed = {g["settings"]["seeded"]: g for g in client.get(f"{API}/games").json()}
+    assert listed[False]["counted"] and not listed[True]["counted"] and listed[True]["best_hand"] == 56
+
+    board = client.get(f"{API}/leaderboards/best_hand").json()
+    assert board["players"] == 1 and board["entries"][0]["you"] and board["you"]["rank"] == 1
+    assert board["entries"][0]["value"] == me["high_scores"]["best_hand"]
+    assert client.get(f"{API}/leaderboards/best_hand", params={"deck": "b_blue"}).json()["entries"] == []
+    assert client.get(f"{API}/leaderboards/nope").status_code == 422
+    assert client.get(f"{API}/leaderboards/wins", params={"stake": 9}).status_code == 422
+
+    everyone = client.get(f"{API}/stats/global").json()
+    assert (everyone["players"], everyone["runs"], everyone["hands_played"]) == (1, 1, 1)
+
+
+def test_debug_commands_take_a_run_out_of_the_statistics(client):
+    game = client.post(f"{API}/games", json={}).json()
+    client.post(f"{API}/games/{game['id']}/debug", json={"command": {"cmd": "cheat", "dollars": 999}})
+    assert client.get(f"{API}/stats/me").json()["runs"]["counted"] == 0
+    assert client.get(f"{API}/leaderboards/most_money").json()["players"] == 0

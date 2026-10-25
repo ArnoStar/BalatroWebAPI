@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 # The API in a container: http://<host>:8000 (docs at /docs). Runs are kept in
-# a SQLite file in /data (mount a volume there to keep them).
+# the PostgreSQL database of BALATRO_API_DATABASE_URL. /data is where the SQLite
+# file of earlier versions is read from, to import it (README.md, Storage).
 #
 #   docker build --network host -t balatro-api .
-#   docker run -p 8000:8000 -v balatro-data:/data balatro-api
+#   docker run -p 8000:8000 -e BALATRO_API_DATABASE_URL=postgresql://... balatro-api
 #
 # (--network host: the build downloads through this machine's connection, which
 # also works behind a VPN whose MTU is smaller than Docker's bridge.)
@@ -26,8 +27,7 @@ COPY --from=build /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     BALATRO_API_HOST=0.0.0.0 \
-    BALATRO_API_PORT=8000 \
-    BALATRO_API_DATABASE=/data/balatro.db
+    BALATRO_API_PORT=8000
 USER balatro
 WORKDIR /data
 VOLUME /data

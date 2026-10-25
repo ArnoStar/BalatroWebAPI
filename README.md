@@ -154,7 +154,7 @@ game.
 
 | Variable | Default | |
 |---|---|---|
-| `BALATRO_API_DATABASE` | `balatro.db` | A SQLite file, or `memory` |
+| `BALATRO_API_DATABASE_URL` | `postgresql://balatro:balatro@127.0.0.1:55433/balatro` (`make db`) | A PostgreSQL URL, or `memory` |
 | `BALATRO_API_CORS_ORIGINS` | `*` | Comma-separated origins |
 | `BALATRO_API_CACHE_SIZE` | `256` | Runs kept in memory; the others are rebuilt from their commands when needed |
 | `BALATRO_API_DEBUG_COMMANDS` | off | Enables `POST /games/{id}/debug` |
@@ -167,15 +167,43 @@ game.
 
 ```
 docker build --network host -t balatro-api .
-docker run -p 8000:8000 -v balatro-data:/data balatro-api
+docker run -p 8000:8000 -e BALATRO_API_DATABASE_URL=postgresql://... balatro-api
 ```
 
-The image listens on `0.0.0.0:8000` and keeps the runs in `/data/balatro.db`
-(mount a volume there); the settings above apply. `--network host` lets the
+The image listens on `0.0.0.0:8000` and keeps the runs in the PostgreSQL
+database of `BALATRO_API_DATABASE_URL` (it makes its tables on start); the
+settings above apply. `--network host` lets the
 build download through this machine's own connection: behind a VPN whose MTU
 is smaller than Docker's bridge (WireGuard: 1420), downloads from the bridge
 stall. To run it with the front end, see BalatroFrontEnd's
 `docker-compose.yml`.
+
+## Storage
+
+Runs live in PostgreSQL: one row per run and one per command (see
+`docs/architecture.md`). The tables are made and upgraded by numbered
+migrations when the server starts. `make db` starts the database of
+BalatroFrontEnd's compose file (`api-db`, on `127.0.0.1:55433`).
+
+Before PostgreSQL the runs were in a SQLite file. To copy them over, once:
+
+```
+python -m balatro_api.manage import-sqlite /data/balatro.db     # in Docker:
+docker compose exec api python -m balatro_api.manage import-sqlite /data/balatro.db
+```
+
+Each imported run is replayed for its statistics. `python -m
+balatro_api.manage rebuild-stats` replays every run again, after an engine
+release that counts statistics differently.
+
+## Statistics
+
+`GET /stats/me` (the game's Profile > Stats), `GET /leaderboards/{board}` and
+`GET /stats/global` (see `docs/endpoints.md`). The engine records what each
+run adds to the player's profile with the game's own functions; the API keeps
+it with the run (`RunStats`, a cache like the run's progress) and adds it up.
+As in the game, a run whose seed the player chose, or a challenge, doesn't
+count; nor does a run that used debug commands.
 
 ## Deployment
 
@@ -202,10 +230,11 @@ The code follows a clean architecture (see `AGENTS.md`):
 src/balatro_api/
   domain/           runs, settings, their rules and errors (pure Python)
   application/      use cases, their inputs and outputs (dto), the ports they need
-  infrastructure/   adapters: engine/ (BalatroEngine), persistence/ (SQLite, memory), system
+  infrastructure/   adapters: engine/ (BalatroEngine), persistence/ (PostgreSQL, memory), system
   presentation/     http/ (FastAPI: routes, request schemas, error mapping)
   bootstrap.py      wires the adapters into the use cases
   main.py           the ASGI app
+  manage.py         maintenance commands (import the old SQLite runs, rebuild stats)
 ```
 
 ## Development

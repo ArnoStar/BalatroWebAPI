@@ -141,3 +141,26 @@ def test_feedback_events_follow_the_game():
     assert [e.t for e in out.events] == sorted(e.t for e in out.events)
     moved = [e for e in out.events if e.type == "card_moved"]
     assert {e.card for e in moved if e.to == "play"} == set(ids)
+
+
+def test_stats_are_the_engines_profile():
+    engine = BalatroEngine()
+    run = new_run(engine)
+    assert engine.run_stats(run).most_money == 4  # the starting money
+    act(engine, run, PlayerAction(type="select_blind"))
+    ids = [c.id for c in engine.view(run).hand[:5]]
+    out = engine.apply(run, PlayerAction(type="play", cards=tuple(ids)))
+    s = out.stats
+    assert s.best_hand == 56 and s.furthest_round == 1 and s.furthest_ante == 1
+    assert s.hands == {"Pair": 1}
+    assert (s.career["c_hands_played"], s.career["c_cards_played"], s.career["c_rounds"]) == (1, 5, 1)
+    # replaying the run gives the same stats
+    run.record(out.command, out.progress, NOW, stats=s)
+    engine.commit(run, out)
+    assert BalatroEngine().run_stats(run) == s
+    # a won round: joker usage, the boss streak needs a boss
+    act_debug = engine.apply_debug(run, {"cmd": "add_joker", "key": "j_joker"})
+    run.record(act_debug.command, act_debug.progress, NOW, debug=True)
+    engine.commit(run, act_debug)
+    won = engine.apply_debug(run, {"cmd": "cheat", "win": True})
+    assert won.stats.jokers["j_joker"].rounds == 1 and won.stats.boss_streak == 0

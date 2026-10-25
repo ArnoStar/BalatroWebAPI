@@ -327,6 +327,42 @@ None of them consumes randomness. **Response**: as for
 
 ---
 
+## Statistics
+
+As in the game, statistics count only runs whose seed the player didn't
+choose (`POST /games` without `seed`) and that aren't challenges; here, runs
+that used a debug command don't count either (`counted` in `GET /games`).
+Each run's part comes from the engine, which records what it adds to the
+player's profile with the game's own functions.
+
+### `GET /stats/me`
+
+The caller's profile statistics, like the game's Profile > Stats screens:
+`runs` (total, counted, won, lost, in progress), `high_scores` (best hand,
+highest ante and round, most money, bosses in a row, best and current win
+streak, most played hand), `career` (the game's career stats added up),
+`hands`, `jokers` (won rounds held, wins, losses, best stake won),
+`consumables`, `vouchers`, `decks` (per stake), and `activity` (runs started
+on each of the last 30 days, UTC).
+
+### `GET /leaderboards/{board}?deck=&stake=&limit=50`
+
+`board`: `best_hand`, `highest_ante`, `highest_round`, `most_money`,
+`boss_streak` or `wins`. Each player's best counted run on that board (for
+`wins`, their number of won runs), best first; equal values share a rank and
+are listed by who reached them first. `deck` (a deck key) and `stake` (1-8)
+keep only those runs. `entries` are the top `limit`; `you` is the caller's
+entry wherever it ranks (`null` when not on the board). Players appear by
+their display name only (`null` without one), never by id or run.
+
+### `GET /stats/global`
+
+Everyone's counted runs together: players, runs, wins and losses, hands and
+cards played, money earned, the best hand and the highest ante, and runs per
+deck and per stake, the 20 most kept jokers and the poker hands played.
+
+---
+
 ## Errors
 
 Every error is a problem details object

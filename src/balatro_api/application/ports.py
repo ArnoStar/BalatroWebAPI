@@ -3,14 +3,25 @@ implements these; the use cases only see the protocols."""
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
-from balatro_api.domain import Command, GameSettings, Progress, Run, RunSummary
+from balatro_api.domain import Command, GameSettings, Progress, Run, RunStats, RunSummary
 
-from .dto import Catalog, FeedbackEvent, GameView, HandPreview, LegalAction, Player, PlayerAction
+from .dto import (
+    Catalog,
+    FeedbackEvent,
+    GameView,
+    GlobalStats,
+    HandPreview,
+    LeaderboardName,
+    LegalAction,
+    Player,
+    PlayerAction,
+)
 
 
 @dataclass(frozen=True)
@@ -22,6 +33,7 @@ class Outcome:
 
     command: Command
     progress: Progress
+    stats: RunStats
     events: list[FeedbackEvent]
     state: object
 
@@ -43,6 +55,10 @@ class GameEngine(Protocol):
     def start(self, run_id: str, settings: GameSettings) -> Progress: ...
 
     def view(self, run: Run) -> GameView: ...
+
+    def run_stats(self, run: Run) -> RunStats:
+        """What the run has added to the player's statistics so far."""
+        ...
 
     def legal_actions(self, run: Run) -> list[LegalAction]: ...
 
@@ -85,6 +101,39 @@ class GameRepository(Protocol):
     def list(self, owner: str, limit: int, offset: int) -> list[RunSummary]:
         """The owner's runs, most recently updated first."""
         ...
+
+    def runs_of(self, owner: str) -> builtins.list[RunSummary]:
+        """All the owner's runs (with their stats), least recently updated first."""
+        ...
+
+    def leaderboard(self, board: LeaderboardName, deck: str | None, stake: int | None, limit: int,
+                    owner: str) -> BoardPage:
+        """Each player's best counted run on the board (for "wins": their
+        number of won counted runs), best first; equal values by who got
+        there first.  The top ``limit`` rows, plus ``owner``'s row."""
+        ...
+
+    def global_stats(self) -> GlobalStats:
+        """Everyone's counted runs together."""
+        ...
+
+
+@dataclass(frozen=True)
+class BoardRow:
+    rank: int  # tied values share a rank
+    owner: str
+    name: str | None  # the owner's display name
+    value: float
+    deck: str | None
+    stake: int | None
+    won: bool | None
+    at: datetime
+
+
+@dataclass(frozen=True)
+class BoardPage:
+    rows: list[BoardRow]
+    players: int
 
 
 class Authenticator(Protocol):

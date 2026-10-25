@@ -39,7 +39,7 @@ from balatro_api.application.dto import (
     Stickers,
     TagView,
 )
-from balatro_api.domain import Phase, Progress, Run
+from balatro_api.domain import CAREER_STATS, JokerUsage, Phase, Progress, Run, RunStats
 
 from .commands import legal_actions
 
@@ -74,6 +74,24 @@ def progress(G: Game) -> Progress:
     GAME = G.GAME
     return Progress(phase=phase(G), ante=GAME.round_resets.ante, round=GAME.round, dollars=GAME.dollars,
                     won=bool(GAME.won))
+
+
+def run_stats(G: Game) -> RunStats:
+    """What the run has added to the player's profile (the engine's
+    ``G.PROFILE``, the game's career stats, high scores and usage)."""
+    P = G.PROFILE
+    hs = P.high_scores
+    return RunStats(
+        best_hand=float(hs.hand or 0), furthest_ante=int(hs.furthest_ante or 0),
+        furthest_round=int(hs.furthest_round or 0), most_money=float(hs.most_money or 0),
+        boss_streak=int(hs.boss_streak or 0),
+        career={k: float(P.career_stats.get(k) or 0) for k in CAREER_STATS},
+        hands={str(u.order): int(u.count) for u in G.GAME.hand_usage.values()},
+        consumables={str(k): int(u.count) for k, u in G.GAME.consumeable_usage.items()},
+        vouchers={str(k): int(n) for k, n in P.voucher_usage.items()},
+        jokers={str(k): JokerUsage(rounds=int(u.count), wins=int(sum(u.wins.values())),
+                                   losses=int(sum(u.losses.values())))
+                for k, u in P.joker_usage.items()})
 
 
 def plain(v: Any) -> Any:

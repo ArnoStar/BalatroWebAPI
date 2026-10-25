@@ -1,6 +1,6 @@
-"""Where runs are stored."""
+"""Where runs are kept: PostgreSQL, or memory (tests and demos)."""
 
 from .memory import InMemoryGameRepository
-from .sqlite import SqliteGameRepository
+from .postgres import PostgresGameRepository
 
-__all__ = ["InMemoryGameRepository", "SqliteGameRepository"]
+__all__ = ["InMemoryGameRepository", "PostgresGameRepository"]
