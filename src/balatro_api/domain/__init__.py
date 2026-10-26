@@ -1,7 +1,18 @@
 """The domain: runs and their invariants.  Pure Python, no I/O, no frameworks."""
 
-from .errors import DomainError, GameNotFound, GameOver, IllegalAction, InvalidGameSettings, VersionConflict
-from .run import ANONYMOUS_PLAYER, GAME_SPEEDS, Command, GameSettings, Phase, Progress, Run, RunSummary, counts
+from .errors import DomainError, GameNotFound, GameOver, IllegalAction, InvalidGameSettings, Locked, VersionConflict
+from .run import (
+                  ANONYMOUS_PLAYER,
+                  GAME_SPEEDS,
+                  Command,
+                  GameSettings,
+                  Phase,
+                  Progress,
+                  Run,
+                  RunSummary,
+                  counts,
+                  finished,
+)
 from .stats import CAREER_STATS, JokerUsage, RunStats
 
 __all__ = [
@@ -16,6 +27,7 @@ __all__ = [
     "IllegalAction",
     "InvalidGameSettings",
     "JokerUsage",
+    "Locked",
     "Phase",
     "Progress",
     "Run",
@@ -23,4 +35,5 @@ __all__ = [
     "RunSummary",
     "VersionConflict",
     "counts",
+    "finished",
 ]

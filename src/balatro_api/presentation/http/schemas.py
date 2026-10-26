@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from balatro_api.application.dto import ImportedRun, NewGame, PlayerAction
+from balatro_api.application.dto import ImportedRun, NewGame, PlayerAction, PlayerSettings
 
 Version = Annotated[int | None, Field(
     default=None, ge=0,
@@ -128,9 +128,15 @@ class SkipPack(_Action):
     type: Literal["skip_pack"]
 
 
+class Continue(_Action):
+    """The player continues this run from the main menu (as the game's Continue: it can unlock
+    Throwback). Recorded only when it changes something; otherwise the game is returned as it is."""
+    type: Literal["continue"]
+
+
 ActionRequest = Annotated[
     SelectBlind | SkipBlind | RerollBoss | Play | Discard | Sort | CashOut | Buy | Reroll | EndShop | Use | Sell
-    | Move | Pick | SkipPack,
+    | Move | Pick | SkipPack | Continue,
     Field(discriminator="type"),
 ]
 
@@ -157,6 +163,7 @@ class ImportSettings(BaseModel):
     stake: int = Field(1, ge=1, le=8)
     challenge: str | None = None
     game_speed: float = Field(1, json_schema_extra={"enum": [0.5, 1, 2, 4]})
+    seeded: bool = True
 
 
 class ImportGameRequest(BaseModel):
@@ -168,8 +175,23 @@ class ImportGameRequest(BaseModel):
     settings: ImportSettings
     commands: list[dict[str, Any]] = Field(default_factory=list, max_length=20000,
                                            description="engine commands, as in a history (indices into the areas)")
+    start_profile: dict[str, Any] | None = Field(None, description="the history's start_profile")
 
     def to_dto(self) -> ImportedRun:
         s = self.settings
+        # (a history from before progress was kept has no start profile: it rebuilds as a seeded run did)
         return ImportedRun(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge,
-                           game_speed=float(s.game_speed), commands=tuple(self.commands))
+                           game_speed=float(s.game_speed), commands=tuple(self.commands),
+                           seeded=s.seeded if self.start_profile is not None else True,
+                           start_profile=self.start_profile)
+
+
+class PlayerSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    private: bool | None = Field(None, description="Only your name shows on your profile, and your runs can't be "
+                                                   "watched")
+    all_unlocked: bool | None = Field(None, description="New runs fully unlocked (accounts whose roles allow it)")
+
+    def to_dto(self) -> PlayerSettings:
+        return PlayerSettings(private=self.private, all_unlocked=self.all_unlocked)

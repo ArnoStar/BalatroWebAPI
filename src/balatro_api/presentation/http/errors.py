@@ -10,13 +10,23 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from balatro_api.application.errors import AuthUnavailable, DebugCommandsDisabled, ImportForbidden, NotAuthenticated
-from balatro_api.domain import DomainError, GameNotFound, IllegalAction, InvalidGameSettings, VersionConflict
+from balatro_api.application.errors import (
+    AuthUnavailable,
+    DebugCommandsDisabled,
+    ImportForbidden,
+    NotAuthenticated,
+    PlayerNotFound,
+    UnlockAllForbidden,
+)
+from balatro_api.domain import DomainError, GameNotFound, IllegalAction, InvalidGameSettings, Locked, VersionConflict
 
 log = logging.getLogger(__name__)
 
 STATUS: list[tuple[type[DomainError], int]] = [
     (GameNotFound, 404),
+    (PlayerNotFound, 404),
+    (Locked, 409),  # the player hasn't unlocked that deck, stake or challenge yet
+    (UnlockAllForbidden, 403),
     (VersionConflict, 409),
     (IllegalAction, 409),  # (and GameOver): not possible in the game's current state
     (InvalidGameSettings, 422),

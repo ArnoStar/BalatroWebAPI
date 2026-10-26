@@ -19,18 +19,35 @@ from functools import cached_property
 from typing import Any
 
 import balatro
-from balatro import DECK_NAMES, Game
+from balatro import DECK_NAMES, Game, Profile
 from balatro.data import load
 from balatro.rng import SEED_ALPHABET, normalize_seed
 
-from balatro_api.application.dto import Catalog, GameView, HandPreview, LegalAction, PlayerAction
+from balatro_api.application.dto import (
+    Catalog,
+    CollectionView,
+    GameView,
+    HandPreview,
+    LegalAction,
+    PlayerAction,
+    ProgressView,
+)
 from balatro_api.application.locks import RunLocks
 from balatro_api.application.ports import Outcome
-from balatro_api.domain import Command, GameSettings, IllegalAction, InvalidGameSettings, Progress, Run, RunStats
+from balatro_api.domain import (
+    Command,
+    GameSettings,
+    IllegalAction,
+    InvalidGameSettings,
+    Progress,
+    Run,
+    RunStats,
+    RunSummary,
+)
 
-from . import presenter
+from . import presenter, progress
 from .catalog import build_catalog
-from .commands import legal_actions, to_command
+from .commands import from_command, legal_actions, to_command
 
 DEBUG_COMMANDS = ("cheat", "add_joker", "add_tag", "add_voucher")
 
@@ -76,11 +93,15 @@ class BalatroEngine:
 
     # ------------------------------------------------------------ games
     @staticmethod
-    def _new_game(s: GameSettings) -> Game:
-        return Game(s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed).start_run()
+    def _new_game(s: GameSettings, start_profile: dict[str, Any] | None) -> Game:
+        # a run from before progress was kept: fully unlocked, and played as the engine played every run then
+        if start_profile is None:
+            return Game(s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed).start_run()
+        return Game(s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
+                    profile=Profile.from_json(start_profile), seeded=s.seeded).start_run()
 
     def _replay(self, run: Run) -> Game:
-        G = self._new_game(run.settings)
+        G = self._new_game(run.settings, run.start_profile)
         for i, c in enumerate(run.commands):
             try:
                 G.do(c.as_dict())
@@ -113,8 +134,8 @@ class BalatroEngine:
                 self._put(run.id, run.version, G)
             yield G
 
-    def start(self, run_id: str, settings: GameSettings) -> Progress:
-        G = self._new_game(settings)
+    def start(self, run_id: str, settings: GameSettings, start_profile: dict[str, Any] | None = None) -> Progress:
+        G = self._new_game(settings, start_profile)
         self._put(run_id, 0, G)
         return presenter.progress(G)
 
@@ -196,6 +217,42 @@ class BalatroEngine:
                 raise IllegalAction(f"unknown blind {cmd['boss']!r}")
             copy = G.clone()
         return self._play(copy, cmd)
+
+    def continues(self, run: Run) -> bool:
+        """Whether continuing the run from the main menu changes it (it can unlock Throwback)."""
+        with self._game(run) as G:
+            copy = G.clone()
+        before = list(copy.PROFILE.progress.unlocked)
+        copy.do({"cmd": "continue"})
+        return list(copy.PROFILE.progress.unlocked) != before
+
+    def replay_steps(self, run: Run) -> list[dict[str, Any]]:
+        """The run's commands as the player actions they were (cards by id), for a replay."""
+        G = self._new_game(run.settings, run.start_profile)
+        steps: list[dict[str, Any]] = []
+        for i, c in enumerate(run.commands):
+            cmd = c.as_dict()
+            steps.append(from_command(G, cmd))
+            try:
+                G.do(cmd)
+            except Exception as e:
+                raise IllegalAction(str(ReplayFailed(run.id, i, e))) from e
+        return steps
+
+    # ------------------------------------------------------------ the player's progress
+    def player_progress(self, runs: Sequence[RunSummary]) -> dict[str, Any]:
+        """progress.player_profile: what the player's runs unlocked, as the engine's Profile JSON."""
+        doc: dict[str, Any] = progress.player_profile(runs).to_json()
+        return doc
+
+    def check_unlocked(self, settings: GameSettings, profile: dict[str, Any]) -> None:
+        progress.check_unlocked(settings, Profile.from_json(profile))
+
+    def progress_view(self, profile: dict[str, Any], all_unlocked: bool, can_unlock_all: bool) -> ProgressView:
+        return progress.progress_view(Profile.from_json(profile), all_unlocked, can_unlock_all)
+
+    def collection(self, profile: dict[str, Any]) -> CollectionView:
+        return progress.collection_view(Profile.from_json(profile))
 
     def commit(self, run: Run, outcome: Outcome) -> None:
         if not isinstance(outcome.state, Game):

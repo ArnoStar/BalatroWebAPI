@@ -32,7 +32,7 @@ from balatro_api.application.dto import (
     StakePopularity,
     UsageCount,
 )
-from balatro_api.application.ports import BoardPage, BoardRow
+from balatro_api.application.ports import BoardPage, BoardRow, PlayerRecord
 from balatro_api.application.statistics import POKER_HANDS, number, score
 from balatro_api.domain import (
     Command,
@@ -94,11 +94,19 @@ MIGRATIONS: tuple[str, ...] = (
     """
     ALTER TABLE runs ADD COLUMN replay BOOLEAN NOT NULL DEFAULT FALSE;
     """,
+    # 3: the player's progress: the profile each run started from (null: from before progress was kept), whether
+    # it adds to the player's progress, and the players' settings
+    """
+    ALTER TABLE runs ADD COLUMN start_profile JSONB;
+    ALTER TABLE runs ADD COLUMN tracks_progress BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE players ADD COLUMN private BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE players ADD COLUMN all_unlocked BOOLEAN NOT NULL DEFAULT FALSE;
+    """,
 )
 
 RUN_COLUMNS = ("id", "owner", "seed", "seeded", "deck", "stake", "challenge", "game_speed", "engine_version", "version",
                "phase", "ante", "round", "dollars", "won", "debug", "best_hand", "furthest_ante", "furthest_round",
-               "most_money", "boss_streak", "stats", "created_at", "updated_at", "replay")
+               "most_money", "boss_streak", "stats", "created_at", "updated_at", "replay", "tracks_progress")
 SELECT_RUNS = sql.SQL("SELECT {} FROM runs").format(sql.SQL(", ").join(sql.Identifier(c) for c in RUN_COLUMNS))
 BOARD_COLUMNS = {"best_hand": "best_hand", "highest_ante": "furthest_ante", "highest_round": "furthest_round",
                  "most_money": "most_money", "boss_streak": "boss_streak"}
@@ -180,7 +188,7 @@ class PostgresGameRepository:
                                    boss_streak=row["boss_streak"])
         return RunSummary(id=row["id"], settings=settings, progress=progress, version=row["version"],
                           created_at=row["created_at"], updated_at=row["updated_at"], owner=row["owner"],
-                          stats=stats, debug=row["debug"], replay=row["replay"])
+                          stats=stats, debug=row["debug"], replay=row["replay"], tracks_progress=row["tracks_progress"])
 
     @staticmethod
     def _cached(run: Run) -> dict[str, Any]:
@@ -211,7 +219,8 @@ class PostgresGameRepository:
         values = {"id": run.id, "owner": run.owner, "seed": s.seed, "seeded": s.seeded, "deck": s.deck,
                   "stake": s.stake, "challenge": s.challenge, "game_speed": s.game_speed,
                   "engine_version": run.engine_version, "created_at": run.created_at, "replay": run.replay,
-                  **self._cached(run)}
+                  "start_profile": Jsonb(run.start_profile) if run.start_profile is not None else None,
+                  "tracks_progress": run.tracks_progress, **self._cached(run)}
         query = sql.SQL("INSERT INTO runs ({}) VALUES ({})").format(
             sql.SQL(", ").join(sql.Identifier(c) for c in values),
             sql.SQL(", ").join(sql.Placeholder(c) for c in values))
@@ -227,11 +236,13 @@ class PostgresGameRepository:
                 raise GameNotFound(run_id)
             commands = [Command(r["command"]) for r in conn.execute(
                 "SELECT command FROM commands WHERE run_id = %s ORDER BY seq", (run_id,))]
+            start = conn.execute("SELECT start_profile FROM runs WHERE id = %s", (run_id,)).fetchone()
             name = conn.execute("SELECT name FROM players WHERE id = %s", (row["owner"],)).fetchone()
         s = self._summary(row)
         return Run(id=s.id, settings=s.settings, engine_version=row["engine_version"], progress=s.progress,
                    created_at=s.created_at, updated_at=s.updated_at, commands=commands, owner=s.owner,
-                   owner_name=name["name"] if name else None, stats=s.stats, debug=s.debug, replay=s.replay)
+                   owner_name=name["name"] if name else None, stats=s.stats, debug=s.debug, replay=s.replay,
+                   start_profile=start["start_profile"] if start else None)
 
     def save(self, run: Run, expected_version: int) -> None:
         values = self._cached(run)
@@ -264,6 +275,30 @@ class PostgresGameRepository:
         with self._tx() as conn:
             if conn.execute("DELETE FROM runs WHERE id = %s", (run_id,)).rowcount != 1:
                 raise GameNotFound(run_id)
+
+    def player(self, player_id: str) -> PlayerRecord | None:
+        with self._tx() as conn:
+            row = conn.execute("SELECT id, name, private, all_unlocked FROM players WHERE id = %s",
+                               (player_id,)).fetchone()
+        if row is None:
+            return None
+        return PlayerRecord(id=row["id"], name=row["name"], private=row["private"], all_unlocked=row["all_unlocked"])
+
+    def set_player(self, player_id: str, name: str | None, *, private: bool | None = None,
+                   all_unlocked: bool | None = None) -> PlayerRecord:
+        with self._tx() as conn:
+            conn.execute("INSERT INTO players (id, name, updated_at) VALUES (%s, %s, now()) "
+                         "ON CONFLICT (id) DO NOTHING", (player_id, name))
+            if name is not None:
+                conn.execute("UPDATE players SET name = %s WHERE id = %s", (name, player_id))
+            if private is not None:
+                conn.execute("UPDATE players SET private = %s WHERE id = %s", (private, player_id))
+            if all_unlocked is not None:
+                conn.execute("UPDATE players SET all_unlocked = %s WHERE id = %s", (all_unlocked, player_id))
+            row = conn.execute("SELECT id, name, private, all_unlocked FROM players WHERE id = %s",
+                               (player_id,)).fetchone()
+        assert row is not None
+        return PlayerRecord(id=row["id"], name=row["name"], private=row["private"], all_unlocked=row["all_unlocked"])
 
     def list(self, owner: str, limit: int, offset: int) -> list[RunSummary]:
         with self._tx() as conn:

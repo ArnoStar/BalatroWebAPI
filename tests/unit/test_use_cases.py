@@ -18,6 +18,7 @@ from balatro_api.domain import (
     GameOver,
     GameSettings,
     IllegalAction,
+    Locked,
     Phase,
     Progress,
     Run,
@@ -47,8 +48,18 @@ class FakeEngine:
     def check_settings(self, settings: GameSettings) -> GameSettings:
         return settings
 
-    def start(self, run_id: str, settings: GameSettings) -> Progress:
+    def start(self, run_id: str, settings: GameSettings, start_profile: dict[str, Any] | None = None) -> Progress:
         return START
+
+    def player_progress(self, runs: Any) -> dict[str, Any]:
+        return {"unlocked": []}
+
+    def check_unlocked(self, settings: GameSettings, profile: dict[str, Any]) -> None:
+        if settings.deck == "b_locked":
+            raise Locked("locked")
+
+    def continues(self, run: Run) -> bool:
+        return False
 
     def run_stats(self, run: Run) -> RunStats:
         return RunStats(most_money=4)

@@ -98,10 +98,20 @@ class RunSummary:
     stats: RunStats = field(default_factory=RunStats)
     debug: bool = False
     replay: bool = False
+    tracks_progress: bool = False
 
     @property
     def counts(self) -> bool:
         return counts(self.settings, self.debug)
+
+    @property
+    def finished(self) -> bool:
+        return finished(self.progress)
+
+
+def finished(progress: Progress) -> bool:
+    """The run is over (lost, or won: what comes after the win is endless play)."""
+    return progress.phase is Phase.GAME_OVER or progress.won
 
 
 def counts(settings: GameSettings, debug: bool) -> bool:
@@ -122,7 +132,8 @@ class Run:
     commands: list[Command] = field(default_factory=list)
     owner: str = ANONYMOUS_PLAYER
     """The player whose run it is (their account id at the identity service).
-    Nobody else can see or play it."""
+    Nobody else can play it; others may watch it once it is finished, unless
+    the owner's profile is private."""
     owner_name: str | None = None
     """The owner's display name when they last played it (for leaderboards)."""
     stats: RunStats = field(default_factory=RunStats)
@@ -130,8 +141,23 @@ class Run:
     debug: bool = False
     """A debug command was used: the run doesn't count for statistics."""
     replay: bool = False
-    """Rebuilt from a bug report's history (ImportGame): the developer plays it,
-    but it isn't one of their runs (not listed)."""
+    """Rebuilt from another run's history (a bug report, or watching a run):
+    the caller plays it, but it isn't one of their runs (not listed)."""
+    start_profile: dict[str, Any] | None = None
+    """The player's progress when the run started (what was unlocked and
+    discovered, as the engine's Profile JSON): it decides the pools, so it is
+    part of the run like its settings.  None: a run from before progress was
+    kept, played fully unlocked.  {"all": true}: played fully unlocked (a tester's
+    choice)."""
+
+    @property
+    def tracks_progress(self) -> bool:
+        """The run started from the player's real progress, so it adds to it."""
+        return self.start_profile is not None and not self.start_profile.get("all") and not self.replay
+
+    @property
+    def finished(self) -> bool:
+        return finished(self.progress)
 
     @property
     def version(self) -> int:
@@ -165,4 +191,4 @@ class Run:
 
     def summary(self) -> RunSummary:
         return RunSummary(self.id, self.settings, self.progress, self.version, self.created_at, self.updated_at,
-                          self.owner, self.stats, self.debug, self.replay)
+                          self.owner, self.stats, self.debug, self.replay, self.tracks_progress)

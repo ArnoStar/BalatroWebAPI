@@ -20,6 +20,7 @@ from balatro_api.application.dto import (
     CardMovedEvent,
     CardRemovedEvent,
     CardTextEvent,
+    CardUnlockedEvent,
     CardView,
     DeckCardView,
     DeckView,
@@ -94,7 +95,9 @@ def run_stats(G: Game) -> RunStats:
         vouchers={str(k): int(n) for k, n in P.voucher_usage.items()},
         jokers={str(k): JokerUsage(rounds=int(u.count), wins=int(sum(u.wins.values())),
                                    losses=int(sum(u.losses.values())))
-                for k, u in P.joker_usage.items()})
+                for k, u in P.joker_usage.items()},
+        unlocked=tuple(P.progress.unlocked), discovered=tuple(P.progress.discovered),
+        streaks={str(k): float(v) for k, v in P.progress.streaks.items()})
 
 
 def plain(v: Any) -> Any:
@@ -147,6 +150,7 @@ def card_view(G: Game, c: Any, area: str, face_up: bool = False) -> CardView:
         debuffed=bool(c.debuff),
         selected=bool(c.highlighted),
         forced_selection=bool(ab.forced_selection),
+        pinned=bool(c.pinned),
         cost=c.cost if in_shop else None,
         sell_value=c.sell_cost if area in ("jokers", "consumeables") else None,
         bonus_chips=(ab.perma_bonus or None) if playing else None,
@@ -346,6 +350,8 @@ def feedback_events(entries: list[dict[str, Any]], G: Game | None = None) -> lis
                                         else None))
         elif kind == "attention_text":
             out.append(AttentionTextEvent(t=t, card=e["card"], key=e["key"]))
+        elif kind == "card_unlocked":
+            out.append(CardUnlockedEvent(t=t, key=e["key"], set=e["set"]))
         elif kind == "card_removed" and e["area"] in AREA_NAMES:
             out.append(CardRemovedEvent(t=t, card=e["card"], area=AREA_NAMES[e["area"]]))
     return out

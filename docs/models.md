@@ -53,6 +53,7 @@ accepts only its own fields (others are rejected), plus `expected_version`.
 | `move` | `card`: id; `to`: integer ≥ 0 |
 | `pick` | `card`: id; `targets`: card ids or null |
 | `skip_pack` | none |
+| `continue` | none: the player continued the run from the main menu (recorded only if it unlocks something) |
 
 | Common field | Type | |
 |---|---|---|
@@ -146,6 +147,7 @@ or a booster pack.
 | `debuffed` | boolean | the card is debuffed (by the boss blind, or a perishable joker that ran out) |
 | `selected` | boolean | the card is selected (highlighted). After an action this is mostly a forced card. |
 | `forced_selection` | boolean | Cerulean Bell: this card is always selected and is played with every hand |
+| `pinned` | boolean | a challenge's pinned joker: it stays leftmost (the game's area sorts pinned cards first) |
 | `cost` | number \| null | the price, for cards in the shop (`shop`, vouchers, boosters) |
 | `sell_value` | number \| null | what selling gives, for jokers and consumables |
 | `bonus_chips` | number \| null | playing cards: chips added for good (Hiker) |
@@ -419,6 +421,7 @@ shows it. How to use them is explained in [Animations](animations.md).
 | `card_juiced` | `card` | the joker behind a scored or held card's effect wiggles (the effect's pop-up is on the playing card: Ancient Joker, Greedy Joker...) |
 | `card_changed` | `card`, `change` (`edition`, `seal`), `view` | the card juices with its new edition's or seal's sound (Aura, Hex, Ectoplasm, Déjà Vu, Talisman...); `view` is how it looks |
 | `attention_text` | `card`, `key` | a big text over the card; `key` is the game's localization key (`k_nope_ex`: The Wheel of Fortune missed) |
+| `card_unlocked` | `key`, `set` | the player has just unlocked this joker, voucher or deck (the game's "Unlocked!" notification) |
 | `card_removed` | `card`, `area` | a card leaves the game (sold, used, destroyed, or a shop card when the shop closes) |
 | `hand` | `hand`, `level`, `chips`, `mult`, `hand_score` | the scoring panel changes. Only changed values are given; `""` clears a value, `"?"` hides it (face-down cards selected) |
 | `card_text` | `card`, `effect`, `amount`, `message`, `held`, `edition` | a pop-up over a card |
@@ -481,8 +484,39 @@ game writes "naneinf").
 The fields are documented in the OpenAPI schema (`/docs`): `PlayerStats`
 (`runs`, `high_scores`, `career`, `hands`, `jokers`, `consumables`,
 `vouchers`, `decks`, `activity`), `Leaderboard` (`entries` of
-`LeaderboardEntry`: `rank`, `player`, `you`, `value`, `deck`, `stake`, `won`,
-`achieved_at`; and `you`), and `GlobalStats`.
+`LeaderboardEntry`: `rank`, `player`, `player_id` (their profile), `you`,
+`value`, `deck`, `stake`, `won`, `achieved_at`; and `you`), and `GlobalStats`.
+
+## Players and progress
+
+`GET /players/me` is a `MeView`: `id`, `name`, `private`, and `progress`, a
+`ProgressView`:
+
+| Field | Type | |
+|---|---|---|
+| `all_unlocked` | boolean | "unlock everything" is on: new runs start fully unlocked (and add nothing to the progress) |
+| `can_unlock_all` | boolean | the player's roles allow that switch (tester, developer, admin) |
+| `unlocked` | string[] | the jokers, decks and vouchers unlocked beyond those a new save has |
+| `discovered` | string[] | discovered centers, tags and blinds (the collection shows the others as undiscovered) |
+| `challenges_completed` | string[] | |
+| `challenges_unlocked` | integer | the first N challenges of the catalog are open |
+| `deck_stakes` | object | deck key → highest stake won with it |
+| `max_stakes` | object | deck key → highest stake a new run can have with it |
+
+`GET /players/{id}` is a `PlayerProfileView`: `id`, `name`, `you`, `private`,
+and unless the profile is private (and not yours): `stats` (`PlayerStats`),
+`collection` (`CollectionView`: `{found, total}` for `jokers`, `tarots`,
+`planets`, `spectrals`, `vouchers`, `boosters`, `editions`, `blinds`, `tags`,
+`decks` (unlocked), `challenges` (completed), and `deck_stakes`), and `runs`
+(`GameSummaryView`s: another player's finished runs only).
+
+## WatchView
+
+The response of `POST /games/{id}/watch`: `source` (the watched run),
+`owner_name`, `game` (the copy, at version 0) and `steps`: `{version, action}`
+in order, where `action` is the body to post to `/games/{copy}/actions`, or
+`{"type": "debug", "command": ...}` for `/games/{copy}/debug` (allowed on a
+copy).
 
 ## HistoryView
 
@@ -494,6 +528,7 @@ The response of `GET /games/{id}/history`.
 | `engine_version` | string | the BalatroEngine version the run was created with |
 | `settings` | SettingsView | |
 | `commands` | object[] | every accepted command, in the engine's format (`{"cmd": "play", "cards": [0, 2]}`, cards are positions in their area) |
+| `start_profile` | object \| null | the player's progress the run started from (what decides the pools). `null`: a run from before progress was kept, fully unlocked. `POST /games/import` takes it back, with `settings.seeded` |
 
 ---
 

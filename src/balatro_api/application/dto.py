@@ -33,6 +33,7 @@ ActionType = Literal[
     "buy", "reroll", "end_shop",
     "use", "sell", "move",
     "pick", "skip_pack",
+    "continue",
 ]
 
 
@@ -70,6 +71,8 @@ class ImportedRun:
     challenge: str | None = None
     game_speed: float = 1.0
     commands: tuple[dict[str, Any], ...] = ()
+    seeded: bool = True  # the player chose the seed (a history before progress was kept: true)
+    start_profile: dict[str, Any] | None = None  # the progress the run started from (HistoryView.start_profile)
 
 
 # ------------------------------------------------------------------ cards
@@ -101,6 +104,7 @@ class CardView:
     debuffed: bool = False
     selected: bool = False
     forced_selection: bool = False  # Cerulean Bell: always selected
+    pinned: bool = False  # a challenge's pinned joker: it stays leftmost (CardArea:align_cards)
     cost: Number | None = None  # the price in the shop
     sell_value: Number | None = None
     bonus_chips: Number | None = None  # playing cards: chips added for good (Hiker)
@@ -343,6 +347,9 @@ class HistoryView:
     engine_version: str
     settings: SettingsView
     commands: list[dict[str, Any]]  # in the engine's format (indices into the areas)
+    # the player's progress when the run started, which decides the pools (null: a run from before progress
+    # was kept, played fully unlocked); a rebuild passes it back
+    start_profile: dict[str, Any] | None = None
 
 
 # ------------------------------------------------------------------ feedback
@@ -442,6 +449,14 @@ class CardChangedEvent:
 
 
 @dataclass(frozen=True, kw_only=True)
+class CardUnlockedEvent:
+    type: Literal["card_unlocked"] = "card_unlocked"
+    t: float
+    key: str  # a joker, voucher or deck the player has just unlocked (the game's "Unlocked!" notification)
+    set: str  # Joker, Voucher or Back
+
+
+@dataclass(frozen=True, kw_only=True)
 class AttentionTextEvent:
     type: Literal["attention_text"] = "attention_text"
     t: float
@@ -459,7 +474,7 @@ class CardRemovedEvent:
 
 FeedbackEvent = (HandPanelEvent | CardTextEvent | HandScoredEvent | RoundScoreEvent | DollarsEvent | StatusTextEvent
                  | CardMovedEvent | CardFlippedEvent | CardRemovedEvent | CardJuicedEvent | CardChangedEvent
-                 | AttentionTextEvent)
+                 | AttentionTextEvent | CardUnlockedEvent)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -719,6 +734,7 @@ class LeaderboardEntry:
     rank: int  # 1 = the best; tied values share a rank
     player: str | None  # the player's display name (None: no name)
     you: bool  # this is the caller's entry
+    player_id: str | None = None  # the player's profile (GET /players/{id})
     value: Score
     deck: str | None  # where the value was reached (None for "wins")
     stake: int | None
@@ -777,3 +793,90 @@ class GlobalStats:
     stakes: list[StakePopularity]  # by stake
     jokers: list[JokerPopularity]  # the 20 most held
     hands: list[UsageCount]  # poker hands by times played
+
+
+# ------------------------------------------------------------------ progress and players
+@dataclass(frozen=True, kw_only=True)
+class ProgressView:
+    """The player's progress, as the game's profile keeps it: what the run setup, the shop and
+    the collection show as unlocked and discovered."""
+
+    all_unlocked: bool  # the player has switched "unlock everything" on (testers): new runs are fully unlocked
+    can_unlock_all: bool  # the player's roles allow that switch
+    unlocked: list[str]  # the jokers, decks and vouchers unlocked beyond those a new save has
+    discovered: list[str]  # centers, tags and blinds discovered (the collection shows the others as "?")
+    challenges_completed: list[str]
+    challenges_unlocked: int  # the first N challenges (catalog order) are open
+    deck_stakes: dict[str, int]  # deck key -> the highest stake won with it
+    max_stakes: dict[str, int]  # deck key -> the highest stake a new run can have with it
+
+
+@dataclass(frozen=True, kw_only=True)
+class CollectionCount:
+    found: int
+    total: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class CollectionView:
+    """How much of the game a player has discovered (the collection's counts)."""
+
+    jokers: CollectionCount
+    tarots: CollectionCount
+    planets: CollectionCount
+    spectrals: CollectionCount
+    vouchers: CollectionCount
+    boosters: CollectionCount
+    editions: CollectionCount
+    blinds: CollectionCount
+    tags: CollectionCount
+    decks: CollectionCount  # unlocked
+    challenges: CollectionCount  # completed
+    deck_stakes: dict[str, int]  # deck key -> the highest stake won with it
+
+
+@dataclass(frozen=True, kw_only=True)
+class PlayerSettings:
+    """What a player changes on their own account here."""
+
+    private: bool | None = None  # only the name shows on the profile; the runs can't be watched
+    all_unlocked: bool | None = None  # testers: new runs fully unlocked (the real progress stays as it is)
+
+
+@dataclass(frozen=True, kw_only=True)
+class MeView:
+    id: str
+    name: str | None
+    private: bool
+    progress: ProgressView
+
+
+@dataclass(frozen=True, kw_only=True)
+class PlayerProfileView:
+    """A player's public profile. A private one (not the caller's) has only the name."""
+
+    id: str
+    name: str | None
+    you: bool
+    private: bool
+    stats: PlayerStats | None = None
+    collection: CollectionView | None = None
+    runs: list[GameSummaryView] = field(default_factory=list)  # recent runs (others': finished ones only)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReplayStep:
+    version: int  # the run's version before this step
+    # a player action (as POST /games/{id}/actions takes it), or {"type": "debug", "command": ...}
+    action: dict[str, Any]
+
+
+@dataclass(frozen=True, kw_only=True)
+class WatchView:
+    """A copy of a run to watch it again: play ``steps`` on ``game`` (a new run of the caller's,
+    not listed and not counted), each with its usual animations."""
+
+    source: str  # the watched run
+    owner_name: str | None
+    game: GameView
+    steps: list[ReplayStep]
