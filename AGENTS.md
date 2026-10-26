@@ -34,14 +34,21 @@ which reproduces the original game exactly.
    The deck view has no card ids, because they would let a client track a card
    that is later drawn face down.
 6. **A run is its owner's.** Every use case takes the `Player` first and loads
-   runs through `owned_run`. Another player's run is `GameNotFound` (404),
-   never 403: don't reveal that it exists. Players come from the identity
-   service's access tokens (`Authenticator` port). Never trust a player id the
-   client sends any other way.
+   runs through `owned_run` to play them. Another player's run is
+   `GameNotFound` (404), never 403: don't reveal that it exists. Watching
+   (history, `watch`) goes through `viewable_run`: one's own runs, and others'
+   *finished* runs unless their owner's profile is private (developers: any).
+   A live run's history would show what is coming. Players come from the
+   identity service's access tokens (`Authenticator` port). Never trust a
+   player id the client sends any other way.
 7. **A cached game is touched by one thread at a time.** Inside the engine
    adapter, always go through `BalatroEngine._game(run)`, which holds the
    run's lock. Even read-only engine calls such as `legal_actions` or
    `preview_hand` swap state temporarily.
+8. **Progress is the game's.** What a player has unlocked comes from their
+   runs (`infrastructure/engine/progress.py` adds them up with the engine's
+   rules), and every run stores the profile it started from
+   (`Run.start_profile`): it decides the pools, so a replay must use it.
 
 ## Architecture (clean architecture)
 

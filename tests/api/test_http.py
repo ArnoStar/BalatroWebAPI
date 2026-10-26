@@ -99,7 +99,7 @@ def test_debug_commands(client):
 def test_runs_survive_a_server_restart(pg):
     settings = Settings()
     first = TestClient(create_app(build_use_cases(settings, games=pg())))
-    game = first.post(f"{API}/games", json={"seed": "RESTART1", "deck": "b_yellow", "stake": 4}).json()
+    game = first.post(f"{API}/games", json={"seed": "RESTART1", "deck": "b_red", "stake": 1}).json()
     rnd = random.Random(1)
     for _ in range(40):
         if game["phase"] == "game_over":

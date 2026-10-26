@@ -8,7 +8,7 @@ import threading
 
 from balatro_api.application import statistics
 from balatro_api.application.dto import GlobalStats, LeaderboardName
-from balatro_api.application.ports import BoardPage
+from balatro_api.application.ports import BoardPage, PlayerRecord
 from balatro_api.domain import GameNotFound, Run, RunSummary, VersionConflict
 
 
@@ -16,11 +16,32 @@ class InMemoryGameRepository:
     def __init__(self) -> None:
         self._runs: dict[str, Run] = {}
         self._names: dict[str, str | None] = {}
+        self._players: dict[str, PlayerRecord] = {}
         self._lock = threading.Lock()
 
     def _remember(self, run: Run) -> None:
         if run.owner_name is not None:
             self._names[run.owner] = run.owner_name
+
+    def player(self, player_id: str) -> PlayerRecord | None:
+        with self._lock:
+            p = self._players.get(player_id)
+            name = self._names.get(player_id)
+            if p is None:
+                return PlayerRecord(id=player_id, name=name) if player_id in self._names else None
+            return PlayerRecord(id=player_id, name=name or p.name, private=p.private, all_unlocked=p.all_unlocked)
+
+    def set_player(self, player_id: str, name: str | None, *, private: bool | None = None,
+                   all_unlocked: bool | None = None) -> PlayerRecord:
+        with self._lock:
+            p = self._players.get(player_id) or PlayerRecord(id=player_id)
+            if name is not None:
+                self._names[player_id] = name
+            p = PlayerRecord(id=player_id, name=self._names.get(player_id),
+                             private=p.private if private is None else private,
+                             all_unlocked=p.all_unlocked if all_unlocked is None else all_unlocked)
+            self._players[player_id] = p
+            return p
 
     def add(self, run: Run) -> None:
         with self._lock:

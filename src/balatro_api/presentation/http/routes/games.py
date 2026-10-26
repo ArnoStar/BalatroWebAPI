@@ -1,5 +1,6 @@
-"""Runs: create, read, play. A player only sees their own runs (another
-player's run is 404 ``game_not_found``)."""
+"""Runs: create, read, play. A player only plays their own runs (another
+player's run is 404 ``game_not_found``); a finished run of a public profile
+can be watched by anyone signed in (history, watch)."""
 
 from __future__ import annotations
 
@@ -7,7 +8,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query, Response, status
 
-from balatro_api.application.dto import ActionResult, GameSummaryView, GameView, HandPreview, HistoryView, LegalAction
+from balatro_api.application.dto import (
+    ActionResult,
+    GameSummaryView,
+    GameView,
+    HandPreview,
+    HistoryView,
+    LegalAction,
+    WatchView,
+)
 from balatro_api.presentation.http.deps import CurrentPlayer, Uses
 from balatro_api.presentation.http.schemas import (
     ActionRequest,
@@ -97,3 +106,12 @@ def history(game_id: str, player: CurrentPlayer, uses: Uses) -> HistoryView:
 def debug(game_id: str, body: DebugRequest, player: CurrentPlayer, uses: Uses) -> ActionResult:
     """Only when the server runs with BALATRO_API_DEBUG_COMMANDS=1."""
     return uses.debug_command(player, game_id, body.command, body.expected_version)
+
+
+@router.post("/{game_id}/watch", status_code=status.HTTP_201_CREATED, response_model=WatchView,
+             summary="Watch a run again")
+def watch_game(game_id: str, player: CurrentPlayer, uses: Uses) -> WatchView:
+    """A copy of the run at its start (a new run of the caller's, not listed and not counted) and
+    the player's actions: play ``steps`` on the copy, in order, to see the run again. One's own
+    runs, and others' finished runs unless their profile is private (developers: any run)."""
+    return uses.watch_game(player, game_id)

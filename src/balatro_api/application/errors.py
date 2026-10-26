@@ -29,3 +29,17 @@ class ImportForbidden(DomainError):
 
     def __init__(self) -> None:
         super().__init__("rebuilding a run needs the developer role (or BALATRO_API_ADMINS, or debug commands)")
+
+
+class PlayerNotFound(DomainError):
+    code = "player_not_found"
+
+    def __init__(self, player_id: str) -> None:
+        super().__init__(f"no player {player_id!r}")
+
+
+class UnlockAllForbidden(DomainError):
+    code = "unlock_all_forbidden"
+
+    def __init__(self) -> None:
+        super().__init__("unlocking everything needs the tester, developer or admin role")

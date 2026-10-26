@@ -12,7 +12,7 @@ from balatro_api import __version__
 from balatro_api.application.use_cases import UseCases
 
 from . import errors, requests
-from .routes import games, meta, stats
+from .routes import games, meta, players, stats
 
 DESCRIPTION = """
 Play Balatro runs over HTTP. The game logic is BalatroEngine's, which
@@ -44,6 +44,7 @@ def create_app(use_cases: UseCases, cors_origins: Sequence[str] = ("*",)) -> Fas
     api.include_router(meta.router)
     api.include_router(games.router)
     api.include_router(stats.router)
+    api.include_router(players.router)
     app.include_router(api)
 
     @app.get("/", include_in_schema=False)

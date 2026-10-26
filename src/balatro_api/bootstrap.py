@@ -17,13 +17,17 @@ from .application.use_cases import (
     GetHistory,
     GetLeaderboard,
     GetLegalActions,
+    GetMe,
+    GetPlayerProfile,
     GetPlayerStats,
     ImportGame,
     ListGames,
     PlayAction,
     PreviewHand,
     RunDebugCommand,
+    UpdateMe,
     UseCases,
+    WatchGame,
 )
 from .config import Settings
 from .infrastructure.auth import AnonymousAuthenticator, JwtAuthenticator
@@ -57,9 +61,10 @@ def build_use_cases(settings: Settings, engine: GameEngine | None = None, games:
     ids = ids or UuidGenerator()
     clock = clock or SystemClock()
     locks = RunLocks()
+    me = GetMe(engine, games, settings.debug_commands)
     return UseCases(
         authenticate=Authenticate(authenticator or build_authenticator(settings)),
-        create_game=CreateGame(engine, games, ids, clock),
+        create_game=CreateGame(engine, games, ids, clock, settings.debug_commands),
         import_game=ImportGame(engine, games, ids, clock, settings.debug_commands, settings.admins),
         get_game=GetGame(engine, games),
         list_games=ListGames(games),
@@ -73,4 +78,8 @@ def build_use_cases(settings: Settings, engine: GameEngine | None = None, games:
         player_stats=GetPlayerStats(games, clock),
         leaderboard=GetLeaderboard(games),
         global_stats=GetGlobalStats(games),
+        watch_game=WatchGame(engine, games, ids, clock),
+        me=me,
+        update_me=UpdateMe(games, me),
+        player_profile=GetPlayerProfile(engine, games, clock),
     )

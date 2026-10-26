@@ -72,7 +72,36 @@ def to_command(G: Game, a: PlayerAction) -> dict[str, Any]:
         if a.to is None:
             raise IllegalAction("'move' needs the new position 'to'")
         return {"cmd": "move", "area": area, "from": i, "to": a.to}
+    if t == "continue":
+        return {"cmd": "continue"}
     raise IllegalAction(f"unknown action {t!r}")
+
+
+def from_command(G: Game, cmd: dict[str, Any]) -> dict[str, Any]:
+    """The player action an engine command is, in the game before it (cards by
+    id): what a replay plays.  A debug command is ``{"type": "debug", "command": ...}``."""
+    c = cmd["cmd"]
+    def ids(area: str, idx: Iterable[int]) -> list[int]:
+        return [int(_cards(G, area)[i].sort_id) for i in idx]
+    if c in NO_ARGUMENTS or c == "continue":
+        return {"type": c}
+    if c == "sort":
+        return {"type": "sort", "mode": cmd.get("mode", "rank")}
+    if c in ("play", "discard"):
+        return {"type": c, "cards": ids("hand", cmd["cards"])}
+    if c == "buy":
+        return {"type": "buy", "card": _cards(G, cmd["area"])[cmd["index"]].sort_id, "use": bool(cmd.get("use"))}
+    if c == "sell":
+        return {"type": "sell", "card": _cards(G, cmd["area"])[cmd["index"]].sort_id}
+    if c in ("use", "pick"):
+        area = "consumeables" if c == "use" else "pack_cards"
+        t = cmd.get("targets")
+        return {"type": c, "card": _cards(G, area)[cmd["index"]].sort_id,
+                "targets": None if t is None else ids("hand", t)}
+    if c == "move":
+        return {"type": "move", "area": AREA_NAMES[cmd["area"]], "card": _cards(G, cmd["area"])[cmd["from"]].sort_id,
+                "to": cmd["to"]}
+    return {"type": "debug", "command": dict(cmd)}
 
 
 def legal_actions(G: Game) -> list[LegalAction]:

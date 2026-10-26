@@ -13,6 +13,7 @@ from balatro_api.domain import Command, GameSettings, Progress, Run, RunStats, R
 
 from .dto import (
     Catalog,
+    CollectionView,
     FeedbackEvent,
     GameView,
     GlobalStats,
@@ -21,6 +22,7 @@ from .dto import (
     LegalAction,
     Player,
     PlayerAction,
+    ProgressView,
 )
 
 
@@ -52,7 +54,9 @@ class GameEngine(Protocol):
         it, a challenge's own deck and stake).  Raises InvalidGameSettings."""
         ...
 
-    def start(self, run_id: str, settings: GameSettings) -> Progress: ...
+    def start(self, run_id: str, settings: GameSettings, start_profile: dict[str, Any] | None = None) -> Progress:
+        """A new run's game, from the player's progress (None: fully unlocked, as runs were before progress)."""
+        ...
 
     def view(self, run: Run) -> GameView: ...
 
@@ -82,13 +86,52 @@ class GameEngine(Protocol):
 
     def preview_hand(self, run: Run, cards: Sequence[int]) -> HandPreview: ...
 
+    def continues(self, run: Run) -> bool:
+        """Whether continuing the run from the main menu changes it."""
+        ...
+
+    def replay_steps(self, run: Run) -> list[dict[str, Any]]:
+        """The run's commands as player actions (cards by id), to play them again on a copy."""
+        ...
+
+    def player_progress(self, runs: Sequence[RunSummary]) -> dict[str, Any]:
+        """The progress the player's runs add up to (an engine profile, as JSON: what a new run starts from)."""
+        ...
+
+    def check_unlocked(self, settings: GameSettings, profile: dict[str, Any]) -> None:
+        """Raises Locked if the run setup wouldn't offer these settings with this progress."""
+        ...
+
+    def progress_view(self, profile: dict[str, Any], all_unlocked: bool, can_unlock_all: bool) -> ProgressView: ...
+
+    def collection(self, profile: dict[str, Any]) -> CollectionView: ...
+
     def forget(self, run_id: str) -> None: ...
 
     def catalog(self) -> Catalog: ...
 
 
+@dataclass(frozen=True)
+class PlayerRecord:
+    """What this API keeps about a player: their name when they last played, and their settings."""
+
+    id: str
+    name: str | None = None
+    private: bool = False
+    all_unlocked: bool = False
+
+
 class GameRepository(Protocol):
     def add(self, run: Run) -> None: ...
+
+    def player(self, player_id: str) -> PlayerRecord | None:
+        """None: the API has never seen this player."""
+        ...
+
+    def set_player(self, player_id: str, name: str | None, *, private: bool | None = None,
+                   all_unlocked: bool | None = None) -> PlayerRecord:
+        """Change the player's settings (None: keep), creating the record if needed."""
+        ...
 
     def get(self, run_id: str) -> Run:
         """Raises GameNotFound."""

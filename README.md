@@ -65,8 +65,23 @@ returns the new `GameView` together with `events`.
 | `GET /api/v1/games/{id}/actions` | What can be done now (also in the `GameView`) |
 | `POST /api/v1/games/{id}/actions` | Act |
 | `POST /api/v1/games/{id}/preview` | The poker hand some selected cards make, as the game shows it while selecting |
-| `GET /api/v1/games/{id}/history` | The run's settings and commands (for bug reports and replays) |
+| `GET /api/v1/games/{id}/history` | The run's settings, start profile and commands (for bug reports and replays): one's own runs, and others' finished runs unless their profile is private |
+| `POST /api/v1/games/{id}/watch` | Watch a run again: a copy at its start (not listed, not counted) and the player's actions to play on it |
+| `GET /api/v1/players/me` | Your settings (`private`) and progress: what is unlocked and discovered, the stakes reached per deck, the challenges open |
+| `PATCH /api/v1/players/me` | `private` (only your name on your profile, runs not watchable); `all_unlocked` (testers, developers, admins: new runs fully unlocked) |
+| `GET /api/v1/players/{id}` | A player's profile: stats, collection, recent (finished) runs; a private one shows only the name |
 | `POST /api/v1/games/{id}/debug` | Test helpers, only with `BALATRO_API_DEBUG_COMMANDS=1` |
+
+**Progress.** A new account starts like a new save of the game: most jokers,
+decks and vouchers locked, White Stake only, no challenges. Runs unlock and
+discover things exactly as in the game (the engine plays unseeded runs from
+the player's progress), and a new run starts from what the player's runs add
+up to: a locked deck, stake or challenge is `409 locked`. Each run keeps the
+progress it started from (`start_profile` in its history), so it always
+replays the same. Runs from before progress was kept were played fully
+unlocked and replay that way; they add nothing to it. The `continue` action
+tells the API that the player continued the run from the main menu (it can
+unlock Throwback); it is recorded only when it changes something.
 
 The OpenAPI schema is at `/openapi.json`. A TypeScript front end can generate
 its types from it, for example with `npx openapi-typescript

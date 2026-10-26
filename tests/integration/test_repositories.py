@@ -195,3 +195,17 @@ def test_an_unreachable_database_is_said_plainly():
 
     with pytest.raises(DatabaseUnavailable, match="127.0.0.1:1/nowhere"):
         PostgresGameRepository("postgresql://u:secret@127.0.0.1:1/nowhere", connect_timeout=1)
+
+
+def test_start_profile_and_players(repo):
+    repo.add(make("legacy"))
+    repo.add(make("tracked", start_profile={"unlocked": ["j_joker"], "discovered": []}))
+    repo.add(make("tester", start_profile={"all": True}))
+    assert repo.get("legacy").start_profile is None and repo.get("tracked").start_profile["unlocked"] == ["j_joker"]
+    assert {s.id: s.tracks_progress for s in repo.runs_of("p1")} == {"legacy": False, "tracked": True, "tester": False}
+    assert repo.player("nobody") is None
+    p = repo.set_player("p9", "Nine", private=True)
+    assert (p.name, p.private, p.all_unlocked) == ("Nine", True, False)
+    p = repo.set_player("p9", None, all_unlocked=True)
+    assert (p.name, p.private, p.all_unlocked) == ("Nine", True, True)
+    assert repo.player("p9") == p

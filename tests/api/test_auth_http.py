@@ -55,7 +55,7 @@ def test_runs_are_private(client: TestClient) -> None:
     assert client.delete(path, headers=ALICE).status_code == 204
 
 
-def test_leaderboards_show_names_not_ids(client: TestClient) -> None:
+def test_leaderboards_show_names_and_profiles(client: TestClient) -> None:
     for who in (ALICE, BOB):
         game = client.post(f"{API}/games", json={}, headers=who).json()
         game = client.post(f"{API}/games/{game['id']}/actions", json={"type": "select_blind"}, headers=who).json()
@@ -66,7 +66,8 @@ def test_leaderboards_show_names_not_ids(client: TestClient) -> None:
     board = client.get(f"{API}/leaderboards/best_hand", headers=BOB).json()
     assert {e["player"] for e in board["entries"]} == {"Alice", "Bob"}
     assert [e["player"] for e in board["entries"] if e["you"]] == ["Bob"] and board["you"]["player"] == "Bob"
-    assert "alice" not in str(board) and "bob" not in str(board)
+    # each entry links to the player's profile (GET /players/{id})
+    assert {e["player_id"] for e in board["entries"]} == {"alice", "bob"}
     mine = client.get(f"{API}/stats/me", headers=ALICE).json()
     assert mine["runs"]["total"] == 1 and mine["career"]["hands_played"] == 1
     assert client.get(f"{API}/stats/global", headers=ALICE).json()["players"] == 2

@@ -47,3 +47,9 @@ class VersionConflict(DomainError):
         super().__init__(f"the game is at version {actual}, not {expected}")
         self.expected = expected
         self.actual = actual
+
+
+class Locked(DomainError):
+    """The player hasn't unlocked this deck, stake or challenge yet (as in the game's run setup)."""
+
+    code = "locked"
