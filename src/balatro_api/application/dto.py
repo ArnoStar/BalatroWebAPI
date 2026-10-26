@@ -420,6 +420,16 @@ class CardFlippedEvent:
     t: float
     card: int
     face_down: bool
+    # turned face up: how the card looks (a tarot or spectral may just have changed it, and the
+    # card can end the action in the deck, which the view doesn't list)
+    view: CardView | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class CardJuicedEvent:
+    type: Literal["card_juiced"] = "card_juiced"
+    t: float
+    card: int  # the joker behind a scored or held card's effect wiggles
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -431,7 +441,7 @@ class CardRemovedEvent:
 
 
 FeedbackEvent = (HandPanelEvent | CardTextEvent | HandScoredEvent | RoundScoreEvent | DollarsEvent | StatusTextEvent
-                 | CardMovedEvent | CardFlippedEvent | CardRemovedEvent)
+                 | CardMovedEvent | CardFlippedEvent | CardRemovedEvent | CardJuicedEvent)
 
 
 @dataclass(frozen=True, kw_only=True)

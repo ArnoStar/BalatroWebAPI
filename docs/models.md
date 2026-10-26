@@ -415,7 +415,8 @@ shows it. How to use them is explained in [Animations](animations.md).
 | `type` | Fields | |
 |---|---|---|
 | `card_moved` | `card`, `to` (area: `deck`, `hand`, `play`, `discard`, `jokers`, `consumables`, `shop`, `vouchers`, `boosters`, `pack`) | a card arrives in an area |
-| `card_flipped` | `card`, `face_down` (boolean) | a card turns over |
+| `card_flipped` | `card`, `face_down` (boolean), `view` (face up: the card's CardView as it ends the action) | a card turns over. Show the card as `view` says: a tarot or spectral may just have changed it, and it may end the action in the deck, which `game` doesn't list |
+| `card_juiced` | `card` | the joker behind a scored or held card's effect wiggles (the effect's pop-up is on the playing card: Ancient Joker, Greedy Joker...) |
 | `card_removed` | `card`, `area` | a card leaves the game (sold, used, destroyed, or a shop card when the shop closes) |
 | `hand` | `hand`, `level`, `chips`, `mult`, `hand_score` | the scoring panel changes. Only changed values are given; `""` clears a value, `"?"` hides it (face-down cards selected) |
 | `card_text` | `card`, `effect`, `amount`, `message`, `held`, `edition` | a pop-up over a card |

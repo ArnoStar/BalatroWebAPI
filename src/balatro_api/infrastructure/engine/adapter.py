@@ -176,7 +176,7 @@ class BalatroEngine:
         finally:
             G.stop_feedback()
         return Outcome(command=Command(command), progress=presenter.progress(G), stats=presenter.run_stats(G),
-                       events=presenter.feedback_events(feedback), state=G)
+                       events=presenter.feedback_events(feedback, G), state=G)
 
     def apply(self, run: Run, action: PlayerAction) -> Outcome:
         with self._game(run) as G:

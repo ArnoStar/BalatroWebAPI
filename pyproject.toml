@@ -25,7 +25,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-balatroengine = { git = "https://github.com/ArnoStar/BalatroEngine.git", tag = "v0.4.0" }
+balatroengine = { git = "https://github.com/ArnoStar/BalatroEngine.git", tag = "v0.4.1" }
 
 [build-system]
 requires = ["setuptools>=68"]

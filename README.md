@@ -110,7 +110,8 @@ is the time in seconds at which the game shows it (at the run's game speed,
 | `type` | |
 |---|---|
 | `card_moved` | a card arrives in an area (`to`: `hand`, `play`, `discard`, `jokers` ...) |
-| `card_flipped`, `card_removed` | a card turns over, a card leaves the game |
+| `card_flipped`, `card_removed` | a card turns over (face up: with its `view`), a card leaves the game |
+| `card_juiced` | the joker behind a scored or held card's effect wiggles (`card`) |
 | `hand` | the scoring panel: `hand`, `level`, `chips`, `mult`, `hand_score` (only what changes) |
 | `card_text` | a pop-up over a card: `effect` (`chips`, `mult`, `x_mult`, `dollars`, `again`, `debuffed`, `message` ...) and `amount` |
 | `hand_scored` | the hand's chips, mult and score, and the round score after it |
