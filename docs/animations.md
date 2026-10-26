@@ -69,6 +69,8 @@ joker after the cards score. The `hand_scored` event then shows `mult=6` and
 | `card_moved` | Move card `card` to area `to` (append at the right). The final order is in `game`. |
 | `card_flipped` | Turn the card over. A card flipping twice in a row (`true`, then `false`) is being changed by a consumable: The Magician, Strength, Death... Turned face up, it comes with `view`: draw that (the card may end the action in the deck, which `game` doesn't list). |
 | `card_juiced` | Wiggle the joker `card` (`juice_up(0.7)`): it made the effect whose pop-up shows next on a playing card. |
+| `card_changed` | Draw the card as `view`, juice it and play the edition's sound (`edition`: `juice_up(1, 0.5)`) or the seal's (`seal`: `juice_up(0.3, 0.3)`, `gold_seal`). |
+| `attention_text` | Show the text of `key` over the card (`k_nope_ex`: "Nope!", The Wheel of Fortune). |
 | `card_removed` | The card leaves: sold, used, destroyed (Glass shattering, Ceremonial Dagger, eaten Gros Michel...), or a shop card disappearing when the shop closes. |
 | `hand` | Update the scoring panel with the fields present. `hand` is the hand name, `chips` and `mult` the running values, `hand_score` the hand's total. `""` clears a field, `"?"` hides it. |
 | `card_text` | A pop-up over card `card`: `+N` for `chips`, `+N Mult` for `mult`, `XN Mult` for `x_mult`, `$N` for `dollars`, `Again!` for `again`, `Debuffed!`... The card can be a playing card, a joker or a consumable (Observatory). |

@@ -90,11 +90,15 @@ MIGRATIONS: tuple[str, ...] = (
         PRIMARY KEY (run_id, seq)
     );
     """,
+    # 2: runs rebuilt from bug reports (ImportGame), not listed with their owner's runs
+    """
+    ALTER TABLE runs ADD COLUMN replay BOOLEAN NOT NULL DEFAULT FALSE;
+    """,
 )
 
 RUN_COLUMNS = ("id", "owner", "seed", "seeded", "deck", "stake", "challenge", "game_speed", "engine_version", "version",
                "phase", "ante", "round", "dollars", "won", "debug", "best_hand", "furthest_ante", "furthest_round",
-               "most_money", "boss_streak", "stats", "created_at", "updated_at")
+               "most_money", "boss_streak", "stats", "created_at", "updated_at", "replay")
 SELECT_RUNS = sql.SQL("SELECT {} FROM runs").format(sql.SQL(", ").join(sql.Identifier(c) for c in RUN_COLUMNS))
 BOARD_COLUMNS = {"best_hand": "best_hand", "highest_ante": "furthest_ante", "highest_round": "furthest_round",
                  "most_money": "most_money", "boss_streak": "boss_streak"}
@@ -176,7 +180,7 @@ class PostgresGameRepository:
                                    boss_streak=row["boss_streak"])
         return RunSummary(id=row["id"], settings=settings, progress=progress, version=row["version"],
                           created_at=row["created_at"], updated_at=row["updated_at"], owner=row["owner"],
-                          stats=stats, debug=row["debug"])
+                          stats=stats, debug=row["debug"], replay=row["replay"])
 
     @staticmethod
     def _cached(run: Run) -> dict[str, Any]:
@@ -206,7 +210,8 @@ class PostgresGameRepository:
         s = run.settings
         values = {"id": run.id, "owner": run.owner, "seed": s.seed, "seeded": s.seeded, "deck": s.deck,
                   "stake": s.stake, "challenge": s.challenge, "game_speed": s.game_speed,
-                  "engine_version": run.engine_version, "created_at": run.created_at, **self._cached(run)}
+                  "engine_version": run.engine_version, "created_at": run.created_at, "replay": run.replay,
+                  **self._cached(run)}
         query = sql.SQL("INSERT INTO runs ({}) VALUES ({})").format(
             sql.SQL(", ").join(sql.Identifier(c) for c in values),
             sql.SQL(", ").join(sql.Placeholder(c) for c in values))
@@ -226,7 +231,7 @@ class PostgresGameRepository:
         s = self._summary(row)
         return Run(id=s.id, settings=s.settings, engine_version=row["engine_version"], progress=s.progress,
                    created_at=s.created_at, updated_at=s.updated_at, commands=commands, owner=s.owner,
-                   owner_name=name["name"] if name else None, stats=s.stats, debug=s.debug)
+                   owner_name=name["name"] if name else None, stats=s.stats, debug=s.debug, replay=s.replay)
 
     def save(self, run: Run, expected_version: int) -> None:
         values = self._cached(run)
@@ -262,8 +267,8 @@ class PostgresGameRepository:
 
     def list(self, owner: str, limit: int, offset: int) -> list[RunSummary]:
         with self._tx() as conn:
-            rows = conn.execute(sql.SQL("{} WHERE owner = %s ORDER BY updated_at DESC LIMIT %s OFFSET %s").format(
-                SELECT_RUNS), (owner, limit, offset)).fetchall()
+            rows = conn.execute(sql.SQL("{} WHERE owner = %s AND NOT replay ORDER BY updated_at DESC "
+                                        "LIMIT %s OFFSET %s").format(SELECT_RUNS), (owner, limit, offset)).fetchall()
         return [self._summary(r) for r in rows]
 
     def runs_of(self, owner: str) -> builtins.list[RunSummary]:

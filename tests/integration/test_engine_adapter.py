@@ -180,6 +180,30 @@ def test_the_joker_behind_a_scored_card_is_named():
     assert len(juiced) == 1 and juiced[0].card in jokers
 
 
+def test_new_editions_seals_and_nope_come_as_events():
+    from balatro_api.infrastructure.engine import presenter
+    G = Game("TESTSEED").start_run()
+    G.do({"cmd": "add_joker", "key": "j_joker"})
+    G.act_select_blind()
+    for key in ("c_aura", "c_wheel_of_fortune"):
+        kind = "Tarot" if "wheel" in key else "Spectral"
+        card = G.create_card(kind, G.consumeables, None, None, None, None, key, "t")
+        card.add_to_deck()
+        G.consumeables.emplace(card)
+    G.settle()
+    target = G.hand.cards[1]
+    fb = G.start_feedback()
+    G.do({"cmd": "use", "index": 0, "targets": [1]})  # Aura
+    G.GAME.probabilities.normal = 0  # (the wheel misses)
+    G.do({"cmd": "use", "index": 0})
+    G.stop_feedback()
+    events = presenter.feedback_events(fb, G)
+    shine = [e for e in events if e.type == "card_changed"]
+    assert [(e.card, e.change) for e in shine] == [(target.sort_id, "edition")]
+    assert shine[0].view is not None and shine[0].view.edition == target.edition.type
+    assert [e.key for e in events if e.type == "attention_text"] == ["k_nope_ex"]
+
+
 def test_stats_are_the_engines_profile():
     engine = BalatroEngine()
     run = new_run(engine)

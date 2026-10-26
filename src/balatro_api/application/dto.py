@@ -433,6 +433,23 @@ class CardJuicedEvent:
 
 
 @dataclass(frozen=True, kw_only=True)
+class CardChangedEvent:
+    type: Literal["card_changed"] = "card_changed"
+    t: float
+    card: int
+    change: Literal["edition", "seal"]  # the card shines with its new edition or seal (Aura, Hex, Deja Vu...)
+    view: CardView | None = None  # how it looks now
+
+
+@dataclass(frozen=True, kw_only=True)
+class AttentionTextEvent:
+    type: Literal["attention_text"] = "attention_text"
+    t: float
+    card: int  # the big text is over this card
+    key: str  # the text's localization key (k_nope_ex: The Wheel of Fortune missed)
+
+
+@dataclass(frozen=True, kw_only=True)
 class CardRemovedEvent:
     type: Literal["card_removed"] = "card_removed"
     t: float
@@ -441,7 +458,8 @@ class CardRemovedEvent:
 
 
 FeedbackEvent = (HandPanelEvent | CardTextEvent | HandScoredEvent | RoundScoreEvent | DollarsEvent | StatusTextEvent
-                 | CardMovedEvent | CardFlippedEvent | CardRemovedEvent | CardJuicedEvent)
+                 | CardMovedEvent | CardFlippedEvent | CardRemovedEvent | CardJuicedEvent | CardChangedEvent
+                 | AttentionTextEvent)
 
 
 @dataclass(frozen=True, kw_only=True)

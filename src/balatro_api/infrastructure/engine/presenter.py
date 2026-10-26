@@ -9,9 +9,11 @@ from balatro.snapshot import JOKER_ABILITY_KEYS
 
 from balatro_api.application.dto import (
     AreaName,
+    AttentionTextEvent,
     BlindChoiceView,
     BlindSelectView,
     BlindView,
+    CardChangedEvent,
     CardFlippedEvent,
     CardJuicedEvent,
     CardKind,
@@ -337,6 +339,13 @@ def feedback_events(entries: list[dict[str, Any]], G: Game | None = None) -> lis
             out.append(CardFlippedEvent(t=t, card=e["card"], face_down=face_down, view=view))
         elif kind == "card_juiced":
             out.append(CardJuicedEvent(t=t, card=e["card"]))
+        elif kind == "card_changed" and e["change"] in ("edition", "seal"):
+            found = _find_card(G, e["card"]) if G is not None else None
+            out.append(CardChangedEvent(t=t, card=e["card"], change=e["change"],
+                                        view=card_view(G, found[0], found[1], face_up=True) if G is not None and found
+                                        else None))
+        elif kind == "attention_text":
+            out.append(AttentionTextEvent(t=t, card=e["card"], key=e["key"]))
         elif kind == "card_removed" and e["area"] in AREA_NAMES:
             out.append(CardRemovedEvent(t=t, card=e["card"], area=AREA_NAMES[e["area"]]))
     return out

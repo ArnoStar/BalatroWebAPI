@@ -92,7 +92,8 @@ class ImportGame:
     """Rebuild a run from its settings and commands, as the caller's run (to
     reproduce a bug report).  For accounts allowed to (their roles, or the
     BALATRO_API_ADMINS list), or anyone on a server with debug commands.  The
-    new run doesn't count for statistics."""
+    new run doesn't count for statistics, and it isn't listed with the caller's
+    runs (it is the reporter's run, seen again)."""
 
     def __init__(self, engine: GameEngine, games: GameRepository, ids: IdGenerator, clock: Clock,
                  debug_enabled: bool, admins: Sequence[str]) -> None:
@@ -110,7 +111,7 @@ class ImportGame:
                   progress=Progress(Phase.BLIND_SELECT, 1, 0, 0, False),  # (replaced by the replay's)
                   created_at=now, updated_at=now,
                   commands=[Command(c) for c in request.commands], owner=player.id, owner_name=player.name,
-                  debug=True)
+                  debug=True, replay=True)
         try:
             run.progress, run.stats = self.engine.load(run)
         except Exception:

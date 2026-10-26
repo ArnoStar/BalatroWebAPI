@@ -124,7 +124,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "balatroengine", git = "https://github.com/ArnoStar/BalatroEngine.git?tag=v0.4.1" },
+    { name = "balatroengine", git = "https://github.com/ArnoStar/BalatroEngine.git?tag=v0.4.2" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "psycopg-pool", specifier = ">=3.2" },
@@ -142,8 +142,8 @@ dev = [
 
 [[package]]
 name = "balatroengine"
-version = "0.4.1"
-source = { git = "https://github.com/ArnoStar/BalatroEngine.git?tag=v0.4.1#767f2a82fae0130d58eec6fa92406b8a92ed6639" }
+version = "0.4.2"
+source = { git = "https://github.com/ArnoStar/BalatroEngine.git?tag=v0.4.2#374d12b606cf0cf0a5ea181ee0cb3a3a883e698d" }
 
 [[package]]
 name = "cffi"

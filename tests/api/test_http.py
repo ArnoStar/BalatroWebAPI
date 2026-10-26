@@ -192,8 +192,9 @@ def test_import_a_run_from_its_history(client):
     # a prefix: the run as it was before the last command
     r = client.post(f"{API}/games/import", json={**history, "commands": history["commands"][:1]})
     assert r.json()["version"] == 1 and r.json()["phase"] == "playing"
-    # imported runs don't count; a command that doesn't replay is refused
-    assert all(not g["counted"] for g in client.get(f"{API}/games").json() if g["id"] != game["id"])
+    # imported runs aren't the caller's runs: not listed (nor counted); a command that doesn't replay is refused
+    assert [g["id"] for g in client.get(f"{API}/games").json()] == [game["id"]]
+    assert client.get(f"{API}/games/{copy['id']}").status_code == 200
     r = client.post(f"{API}/games/import", json={**history, "commands": [{"cmd": "cash_out"}]})
     assert r.status_code == 409 and r.json()["code"] == "illegal_action" and "#0" in r.json()["detail"]
 
