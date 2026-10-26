@@ -9,10 +9,13 @@ from balatro.snapshot import JOKER_ABILITY_KEYS
 
 from balatro_api.application.dto import (
     AreaName,
+    AttentionTextEvent,
     BlindChoiceView,
     BlindSelectView,
     BlindView,
+    CardChangedEvent,
     CardFlippedEvent,
+    CardJuicedEvent,
     CardKind,
     CardMovedEvent,
     CardRemovedEvent,
@@ -115,10 +118,11 @@ def _joker_ability(ab: Any) -> dict[str, Any]:
     return out
 
 
-def card_view(G: Game, c: Any, area: str) -> CardView:
+def card_view(G: Game, c: Any, area: str, face_up: bool = False) -> CardView:
+    """The card as it shows (``face_up``: its front, even if it is turned over now)."""
     ab = c.ability
     kind = CARD_KINDS.get(ab.set, "playing_card")
-    if c.facing == "back":
+    if c.facing == "back" and not face_up:
         return CardView(id=c.sort_id, kind=kind, face_down=True, selected=bool(c.highlighted))
     center = c.config.center
     playing = kind == "playing_card"
@@ -293,7 +297,20 @@ def game_view(run: Run, G: Game) -> GameView:
 
 
 # ------------------------------------------------------------------ feedback
-def feedback_events(entries: list[dict[str, Any]]) -> list[FeedbackEvent]:
+def _find_card(G: Game, card_id: int) -> tuple[Any, str] | None:
+    """A card of the run by sort_id, with its area's name."""
+    for area in (G.hand, G.deck, G.play, G.discard, G.jokers, G.consumeables, G.pack_cards, G.shop_jokers,
+                 G.shop_vouchers, G.shop_booster):
+        if area is None or area.removed:
+            continue
+        for c in area.cards:
+            if c.sort_id == card_id:
+                return c, area.name
+    return None
+
+
+def feedback_events(entries: list[dict[str, Any]], G: Game | None = None) -> list[FeedbackEvent]:
+    """The action's feedback as events; ``G`` (the game after the action) gives the cards turned face up."""
     out: list[FeedbackEvent] = []
     for e in entries:
         kind, t = e["type"], e["t"]
@@ -316,7 +333,19 @@ def feedback_events(entries: list[dict[str, Any]]) -> list[FeedbackEvent]:
         elif kind == "card_moved" and e["to"] in AREA_NAMES:
             out.append(CardMovedEvent(t=t, card=e["card"], to=AREA_NAMES[e["to"]]))
         elif kind == "card_flipped":
-            out.append(CardFlippedEvent(t=t, card=e["card"], face_down=e["facing"] == "back"))
+            face_down = e["facing"] == "back"
+            found = None if face_down or G is None else _find_card(G, e["card"])
+            view = card_view(G, found[0], found[1], face_up=True) if G is not None and found else None
+            out.append(CardFlippedEvent(t=t, card=e["card"], face_down=face_down, view=view))
+        elif kind == "card_juiced":
+            out.append(CardJuicedEvent(t=t, card=e["card"]))
+        elif kind == "card_changed" and e["change"] in ("edition", "seal"):
+            found = _find_card(G, e["card"]) if G is not None else None
+            out.append(CardChangedEvent(t=t, card=e["card"], change=e["change"],
+                                        view=card_view(G, found[0], found[1], face_up=True) if G is not None and found
+                                        else None))
+        elif kind == "attention_text":
+            out.append(AttentionTextEvent(t=t, card=e["card"], key=e["key"]))
         elif kind == "card_removed" and e["area"] in AREA_NAMES:
             out.append(CardRemovedEvent(t=t, card=e["card"], area=AREA_NAMES[e["area"]]))
     return out

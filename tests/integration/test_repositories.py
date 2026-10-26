@@ -80,10 +80,12 @@ def test_list_and_delete(repo):
     for i in range(3):
         repo.add(make(f"r{i}", T0 + timedelta(minutes=i)))
     repo.add(make("theirs", T0 + timedelta(minutes=5), owner="p2"))
+    repo.add(make("replayed", T0 + timedelta(minutes=6), replay=True))  # a bug report seen again: not listed
+    assert repo.get("replayed").replay and not repo.get("r0").replay
     assert [s.id for s in repo.list("p1", 10, 0)] == ["r2", "r1", "r0"]
     assert [s.id for s in repo.list("p1", 1, 1)] == ["r1"]
     assert [(s.id, s.owner) for s in repo.list("p2", 10, 0)] == [("theirs", "p2")]
-    assert [s.id for s in repo.runs_of("p1")] == ["r0", "r1", "r2"]
+    assert [s.id for s in repo.runs_of("p1")] == ["r0", "r1", "r2", "replayed"]
     repo.delete("r1")
     with pytest.raises(GameNotFound):
         repo.get("r1")

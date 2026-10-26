@@ -143,6 +143,67 @@ def test_feedback_events_follow_the_game():
     assert {e.card for e in moved if e.to == "play"} == set(ids)
 
 
+def test_cards_turned_face_up_come_with_their_new_look():
+    # The Devil from a shop's Arcana pack: the card turns Gold, then goes back to the deck
+    # with the rest of the hand, where the view doesn't list it: the flip says how it looks
+    engine = BalatroEngine()
+    run = new_run(engine, seed="FLIPFACE")
+    act(engine, run, PlayerAction(type="select_blind"))
+    out = engine.apply_debug(run, {"cmd": "cheat", "win": True})
+    run.record(out.command, out.progress, NOW)
+    engine.commit(run, out)
+    act(engine, run, PlayerAction(type="cash_out"))
+    act(engine, run, PlayerAction(type="buy", card=57))
+    view = engine.view(run)
+    assert [c.key for c in view.pack.cards][0] == "c_devil"
+    target = next(c for c in view.hand if c.card_key == "C_A")
+    out = engine.apply(run, PlayerAction(type="pick", card=view.pack.cards[0].id, targets=(target.id,)))
+    run.record(out.command, out.progress, NOW)
+    engine.commit(run, out)
+    assert all(c.id != target.id for c in engine.view(run).hand)
+    ups = [e for e in out.events if e.type == "card_flipped" and e.card == target.id and not e.face_down]
+    assert ups and ups[0].view is not None and ups[0].view.enhancement == "m_gold" and ups[0].view.card_key == "C_A"
+    assert all(e.view is None for e in out.events if e.type == "card_flipped" and e.face_down)
+
+
+def test_the_joker_behind_a_scored_card_is_named():
+    engine = BalatroEngine()
+    run = new_run(engine)
+    for key in ("j_greedy_joker", "j_lusty_joker", "j_wrathful_joker", "j_gluttenous_joker"):
+        out = engine.apply_debug(run, {"cmd": "add_joker", "key": key})
+        run.record(out.command, out.progress, NOW)
+        engine.commit(run, out)
+    act(engine, run, PlayerAction(type="select_blind"))
+    jokers = {c.id for c in engine.view(run).jokers}
+    out = engine.apply(run, PlayerAction(type="play", cards=(engine.view(run).hand[0].id,)))
+    juiced = [e for e in out.events if e.type == "card_juiced"]
+    assert len(juiced) == 1 and juiced[0].card in jokers
+
+
+def test_new_editions_seals_and_nope_come_as_events():
+    from balatro_api.infrastructure.engine import presenter
+    G = Game("TESTSEED").start_run()
+    G.do({"cmd": "add_joker", "key": "j_joker"})
+    G.act_select_blind()
+    for key in ("c_aura", "c_wheel_of_fortune"):
+        kind = "Tarot" if "wheel" in key else "Spectral"
+        card = G.create_card(kind, G.consumeables, None, None, None, None, key, "t")
+        card.add_to_deck()
+        G.consumeables.emplace(card)
+    G.settle()
+    target = G.hand.cards[1]
+    fb = G.start_feedback()
+    G.do({"cmd": "use", "index": 0, "targets": [1]})  # Aura
+    G.GAME.probabilities.normal = 0  # (the wheel misses)
+    G.do({"cmd": "use", "index": 0})
+    G.stop_feedback()
+    events = presenter.feedback_events(fb, G)
+    shine = [e for e in events if e.type == "card_changed"]
+    assert [(e.card, e.change) for e in shine] == [(target.sort_id, "edition")]
+    assert shine[0].view is not None and shine[0].view.edition == target.edition.type
+    assert [e.key for e in events if e.type == "attention_text"] == ["k_nope_ex"]
+
+
 def test_stats_are_the_engines_profile():
     engine = BalatroEngine()
     run = new_run(engine)

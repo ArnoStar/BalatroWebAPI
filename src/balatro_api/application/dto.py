@@ -420,6 +420,33 @@ class CardFlippedEvent:
     t: float
     card: int
     face_down: bool
+    # turned face up: how the card looks (a tarot or spectral may just have changed it, and the
+    # card can end the action in the deck, which the view doesn't list)
+    view: CardView | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class CardJuicedEvent:
+    type: Literal["card_juiced"] = "card_juiced"
+    t: float
+    card: int  # the joker behind a scored or held card's effect wiggles
+
+
+@dataclass(frozen=True, kw_only=True)
+class CardChangedEvent:
+    type: Literal["card_changed"] = "card_changed"
+    t: float
+    card: int
+    change: Literal["edition", "seal"]  # the card shines with its new edition or seal (Aura, Hex, Deja Vu...)
+    view: CardView | None = None  # how it looks now
+
+
+@dataclass(frozen=True, kw_only=True)
+class AttentionTextEvent:
+    type: Literal["attention_text"] = "attention_text"
+    t: float
+    card: int  # the big text is over this card
+    key: str  # the text's localization key (k_nope_ex: The Wheel of Fortune missed)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -431,7 +458,8 @@ class CardRemovedEvent:
 
 
 FeedbackEvent = (HandPanelEvent | CardTextEvent | HandScoredEvent | RoundScoreEvent | DollarsEvent | StatusTextEvent
-                 | CardMovedEvent | CardFlippedEvent | CardRemovedEvent)
+                 | CardMovedEvent | CardFlippedEvent | CardRemovedEvent | CardJuicedEvent | CardChangedEvent
+                 | AttentionTextEvent)
 
 
 @dataclass(frozen=True, kw_only=True)

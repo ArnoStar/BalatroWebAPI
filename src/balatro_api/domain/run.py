@@ -97,6 +97,7 @@ class RunSummary:
     owner: str = ANONYMOUS_PLAYER
     stats: RunStats = field(default_factory=RunStats)
     debug: bool = False
+    replay: bool = False
 
     @property
     def counts(self) -> bool:
@@ -128,6 +129,9 @@ class Run:
     """What the run added to the player's statistics (derived, like ``progress``)."""
     debug: bool = False
     """A debug command was used: the run doesn't count for statistics."""
+    replay: bool = False
+    """Rebuilt from a bug report's history (ImportGame): the developer plays it,
+    but it isn't one of their runs (not listed)."""
 
     @property
     def version(self) -> int:
@@ -161,4 +165,4 @@ class Run:
 
     def summary(self) -> RunSummary:
         return RunSummary(self.id, self.settings, self.progress, self.version, self.created_at, self.updated_at,
-                          self.owner, self.stats, self.debug)
+                          self.owner, self.stats, self.debug, self.replay)
