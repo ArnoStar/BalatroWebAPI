@@ -209,3 +209,15 @@ def test_start_profile_and_players(repo):
     p = repo.set_player("p9", None, all_unlocked=True)
     assert (p.name, p.private, p.all_unlocked) == ("Nine", True, True)
     assert repo.player("p9") == p
+
+
+def test_pointers(repo):
+    repo.add(make("r1"))
+    assert repo.pointers("r1") == {}
+    trace = {"v": 1, "e": [[0, "m", 1.5, 2.25], [120, "h", "hand", 4, 7]]}
+    repo.save_pointer("r1", 0, trace)
+    repo.save_pointer("r1", 3, {"v": 1, "e": []})
+    repo.save_pointer("r1", 3, {"v": 1, "e": [[5, "d", 0, 0, 0]]})  # sent again: the last one stays
+    assert repo.pointers("r1") == {0: trace, 3: {"v": 1, "e": [[5, "d", 0, 0, 0]]}}
+    repo.delete("r1")
+    assert repo.pointers("r1") == {}

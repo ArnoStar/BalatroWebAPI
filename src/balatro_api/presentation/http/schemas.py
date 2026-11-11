@@ -33,12 +33,27 @@ class NewGameRequest(BaseModel):
                        game_speed=float(self.game_speed))
 
 
+PointerEntry = Annotated[list[int | float | Annotated[str, Field(max_length=16)]], Field(min_length=2, max_length=24)]
+
+
+class PointerTrace(BaseModel):
+    """The player's pointer before an action, kept to show it when the run is watched again: what
+    the game recorded since the previous action, in its own format (entries of numbers and short
+    strings). Changes nothing in the run."""
+
+    model_config = ConfigDict(extra="forbid")
+    v: Literal[1] = 1
+    e: list[PointerEntry] = Field(default_factory=list, max_length=4000)
+
+
 class _Action(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_version: Version = None
+    pointer: PointerTrace | None = Field(None, description="The player's pointer before the action (for watching "
+                                                           "the run again); it changes nothing in the game")
 
     def to_dto(self) -> PlayerAction:
-        fields = self.model_dump(exclude={"expected_version"})
+        fields = self.model_dump(exclude={"expected_version", "pointer"})
         for k in ("cards", "targets"):
             if fields.get(k) is not None:
                 fields[k] = tuple(fields[k])

@@ -102,6 +102,15 @@ MIGRATIONS: tuple[str, ...] = (
     ALTER TABLE players ADD COLUMN private BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE players ADD COLUMN all_unlocked BOOLEAN NOT NULL DEFAULT FALSE;
     """,
+    # 4: the player's pointer before each action (for watching a run again)
+    """
+    CREATE TABLE pointer_traces (
+        run_id TEXT NOT NULL REFERENCES runs (id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        trace JSONB NOT NULL,
+        PRIMARY KEY (run_id, version)
+    );
+    """,
 )
 
 RUN_COLUMNS = ("id", "owner", "seed", "seeded", "deck", "stake", "challenge", "game_speed", "engine_version", "version",
@@ -275,6 +284,18 @@ class PostgresGameRepository:
         with self._tx() as conn:
             if conn.execute("DELETE FROM runs WHERE id = %s", (run_id,)).rowcount != 1:
                 raise GameNotFound(run_id)
+
+    def save_pointer(self, run_id: str, version: int, pointer: dict[str, Any]) -> None:
+        with self._tx() as conn:
+            conn.execute("INSERT INTO pointer_traces (run_id, version, trace) VALUES (%s, %s, %s) "
+                         "ON CONFLICT (run_id, version) DO UPDATE SET trace = EXCLUDED.trace",
+                         (run_id, version, Jsonb(pointer)))
+
+    def pointers(self, run_id: str) -> dict[int, dict[str, Any]]:
+        with self._tx() as conn:
+            rows = conn.execute("SELECT version, trace FROM pointer_traces WHERE run_id = %s",
+                                (run_id,)).fetchall()
+        return {r["version"]: r["trace"] for r in rows}
 
     def player(self, player_id: str) -> PlayerRecord | None:
         with self._tx() as conn:

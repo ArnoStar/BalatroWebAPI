@@ -154,6 +154,15 @@ class GameRepository(Protocol):
         """All the owner's runs (with their stats), least recently updated first."""
         ...
 
+    def save_pointer(self, run_id: str, version: int, pointer: dict[str, Any]) -> None:
+        """Keep the player's pointer before the action played at ``version`` (for watching the run
+        again). Not part of the run: an action stands without it."""
+        ...
+
+    def pointers(self, run_id: str) -> dict[int, dict[str, Any]]:
+        """The pointers kept for the run, by the version of their action."""
+        ...
+
     def leaderboard(self, board: LeaderboardName, deck: str | None, stake: int | None, limit: int,
                     owner: str) -> BoardPage:
         """Each player's best counted run on the board (for "wins": their

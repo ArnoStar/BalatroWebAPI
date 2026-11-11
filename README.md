@@ -63,10 +63,10 @@ returns the new `GameView` together with `events`.
 | `GET /api/v1/games/{id}` | The run as the player sees it |
 | `DELETE /api/v1/games/{id}` | Delete a run |
 | `GET /api/v1/games/{id}/actions` | What can be done now (also in the `GameView`) |
-| `POST /api/v1/games/{id}/actions` | Act |
+| `POST /api/v1/games/{id}/actions` | Act (`pointer`, optional: the player's pointer since the previous action, kept to show it when the run is watched; it changes nothing in the game) |
 | `POST /api/v1/games/{id}/preview` | The poker hand some selected cards make, as the game shows it while selecting |
 | `GET /api/v1/games/{id}/history` | The run's settings, start profile and commands (for bug reports and replays): one's own runs, and others' finished runs unless their profile is private |
-| `POST /api/v1/games/{id}/watch` | Watch a run again: a copy at its start (not listed, not counted) and the player's actions to play on it |
+| `POST /api/v1/games/{id}/watch` | Watch a run again: a copy at its start (not listed, not counted) and the player's actions to play on it, each with the `pointer` sent with it |
 | `GET /api/v1/players/me` | Your settings (`private`) and progress: what is unlocked and discovered, the stakes reached per deck, the challenges open |
 | `PATCH /api/v1/players/me` | `private` (only your name on your profile, runs not watchable); `all_unlocked` (testers, developers, admins: new runs fully unlocked) |
 | `GET /api/v1/players/{id}` | A player's profile: stats, collection, recent (finished) runs; a private one shows only the name |
