@@ -101,6 +101,29 @@ def test_finished_runs_can_be_watched_by_anyone(client: TestClient) -> None:
     assert client.get(f"{API}/games/{original['id']}/history", headers=BOB).json()["start_profile"] is not None
 
 
+def test_the_players_pointer_is_shown_to_watchers(client: TestClient) -> None:
+    game = client.post(f"{API}/games", json={"seed": "POINTER1"}, headers=ALICE).json()
+    pointer = {"v": 1, "e": [[0, "m", 10.5, 4.25], [640, "d", 11, 4.5, 0], [700, "u", 11, 4.5, 0]]}
+    r = client.post(f"{API}/games/{game['id']}/actions", json={"type": "select_blind", "pointer": pointer},
+                    headers=ALICE)
+    assert r.status_code == 200, r.text
+    game = r.json()["game"]
+    picked = {"v": 1, "e": [[0, "h", "hand", game["hand"][0]["id"]]]}
+    client.post(f"{API}/games/{game['id']}/actions", headers=ALICE,
+                json={"type": "play", "cards": [game["hand"][0]["id"]], "pointer": picked})
+    steps = client.post(f"{API}/games/{game['id']}/watch", headers=ALICE).json()["steps"]
+    assert steps[0]["pointer"] == pointer and steps[1]["pointer"] == picked
+    # a refused action keeps nothing; a malformed or huge pointer is refused
+    bad = client.post(f"{API}/games/{game['id']}/actions", headers=ALICE,
+                      json={"type": "play", "cards": [123456], "pointer": {"v": 1, "e": []}})
+    assert bad.status_code == 409
+    huge = {"v": 1, "e": [[i, "m", 0, 0] for i in range(4001)]}
+    for p in (huge, {"v": 2, "e": []}, {"v": 1, "e": [[0, "x" * 17]]}):
+        r = client.post(f"{API}/games/{game['id']}/actions", json={"type": "sort", "pointer": p}, headers=ALICE)
+        assert r.status_code == 422, p
+    assert len(client.post(f"{API}/games/{game['id']}/watch", headers=ALICE).json()["steps"]) == 2
+
+
 def test_unfinished_and_private_runs_cant_be_watched(client: TestClient) -> None:
     live = client.post(f"{API}/games", json={}, headers=ALICE).json()
     for path in (f"{API}/games/{live['id']}/watch", f"{API}/games/{live['id']}/history"):

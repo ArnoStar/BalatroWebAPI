@@ -14,6 +14,7 @@ action that fails at any step leaves the run as it was.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -49,6 +50,8 @@ from .locks import RunLocks
 from .permissions import Permission, allowed
 from .ports import Authenticator, BoardRow, Clock, GameEngine, GameRepository, IdGenerator, Outcome
 from .statistics import player_stats, score
+
+log = logging.getLogger(__name__)
 
 
 def settings_view(s: GameSettings) -> SettingsView:
@@ -232,6 +235,7 @@ class WatchGame:
     def __call__(self, player: Player, game_id: str) -> WatchView:
         source = viewable_run(self.games, player, game_id)
         steps = self.engine.replay_steps(source)
+        pointers = self.games.pointers(source.id)
         copy_id = self.ids.new_id()
         progress = self.engine.start(copy_id, source.settings, source.start_profile)
         now = self.clock.now()
@@ -243,7 +247,7 @@ class WatchGame:
         owner = self.games.player(source.owner)
         return WatchView(source=source.id, owner_name=owner.name if owner else source.owner_name,
                          game=self.engine.view(copy),
-                         steps=[ReplayStep(version=i, action=a) for i, a in enumerate(steps)])
+                         steps=[ReplayStep(version=i, action=a, pointer=pointers.get(i)) for i, a in enumerate(steps)])
 
 
 class _ChangeRun:
@@ -251,7 +255,8 @@ class _ChangeRun:
         self.engine, self.games, self.locks, self.clock = engine, games, locks, clock
 
     def _change(self, player: Player, game_id: str, expected_version: int | None,
-                play: Callable[[Run], Outcome], debug: bool = False) -> ActionResult:
+                play: Callable[[Run], Outcome], debug: bool = False,
+                pointer: dict[str, Any] | None = None) -> ActionResult:
         with self.locks.hold(game_id):
             run = owned_run(self.games, player, game_id)
             run.check_version(expected_version)
@@ -262,18 +267,26 @@ class _ChangeRun:
             run.owner_name = player.name or run.owner_name
             self.games.save(run, expected_version=version)
             self.engine.commit(run, outcome)
+            if pointer is not None and not run.replay:
+                # (only for watching the run again: the action stands without it)
+                try:
+                    self.games.save_pointer(run.id, version, pointer)
+                except Exception:
+                    log.exception("the pointer of %s at version %d wasn't kept", run.id, version)
             return ActionResult(game=self.engine.view(run), events=outcome.events)
 
 
 class PlayAction(_ChangeRun):
     def __call__(self, player: Player, game_id: str, action: PlayerAction,
-                 expected_version: int | None = None) -> ActionResult:
+                 expected_version: int | None = None, pointer: dict[str, Any] | None = None) -> ActionResult:
+        """``pointer``: the player's pointer before the action, kept for watching the run again."""
         if action.type == "continue":
             # (recorded only when continuing changes the run: otherwise the history would fill with no-ops)
             run = owned_run(self.games, player, game_id)
             if run.finished or not self.engine.continues(run):
                 return ActionResult(game=self.engine.view(run), events=[])
-        return self._change(player, game_id, expected_version, lambda run: self.engine.apply(run, action))
+        return self._change(player, game_id, expected_version, lambda run: self.engine.apply(run, action),
+                            pointer=pointer)
 
 
 class RunDebugCommand(_ChangeRun):

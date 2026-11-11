@@ -869,6 +869,9 @@ class ReplayStep:
     version: int  # the run's version before this step
     # a player action (as POST /games/{id}/actions takes it), or {"type": "debug", "command": ...}
     action: dict[str, Any]
+    # the player's pointer before the action, as the game sent it with the action (its own format;
+    # None: not sent, as by runs played before it was kept)
+    pointer: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

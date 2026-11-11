@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import copy
 import threading
+from typing import Any
 
 from balatro_api.application import statistics
 from balatro_api.application.dto import GlobalStats, LeaderboardName
@@ -17,6 +18,7 @@ class InMemoryGameRepository:
         self._runs: dict[str, Run] = {}
         self._names: dict[str, str | None] = {}
         self._players: dict[str, PlayerRecord] = {}
+        self._pointers: dict[str, dict[int, dict[str, Any]]] = {}
         self._lock = threading.Lock()
 
     def _remember(self, run: Run) -> None:
@@ -69,6 +71,16 @@ class InMemoryGameRepository:
         with self._lock:
             if self._runs.pop(run_id, None) is None:
                 raise GameNotFound(run_id)
+            self._pointers.pop(run_id, None)
+
+    def save_pointer(self, run_id: str, version: int, pointer: dict[str, Any]) -> None:
+        with self._lock:
+            if run_id in self._runs:
+                self._pointers.setdefault(run_id, {})[version] = copy.deepcopy(pointer)
+
+    def pointers(self, run_id: str) -> dict[int, dict[str, Any]]:
+        with self._lock:
+            return copy.deepcopy(self._pointers.get(run_id, {}))
 
     def list(self, owner: str, limit: int, offset: int) -> list[RunSummary]:
         with self._lock:

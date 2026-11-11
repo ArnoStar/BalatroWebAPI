@@ -82,8 +82,10 @@ def act(game_id: str, action: Annotated[ActionRequest, Body(discriminator="type"
     """Apply one player action, then run the game until it waits for the
     player again. Returns the new state and what the player saw happen, in
     order (``events``). An action the game doesn't allow is refused with 409
-    ``illegal_action`` and changes nothing."""
-    return uses.play_action(player, game_id, action.to_dto(), action.expected_version)
+    ``illegal_action`` and changes nothing. ``pointer`` (optional): the
+    player's pointer before the action, shown when the run is watched again."""
+    pointer = action.pointer.model_dump() if action.pointer is not None else None
+    return uses.play_action(player, game_id, action.to_dto(), action.expected_version, pointer)
 
 
 @router.post("/{game_id}/preview", response_model=HandPreview, summary="The hand these cards make")
