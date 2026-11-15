@@ -290,6 +290,9 @@ class GameView:
     hand_size: int
     joker_slots: int
     consumable_slots: int
+    # the cards the shop offers besides vouchers and packs: 2, and 1 more with each of Overstock and
+    # Overstock Plus (the Zodiac Deck starts with Overstock)
+    shop_slots: int = 2
     round_score: Number
     blind: BlindView | None
     blind_select: BlindSelectView | None
@@ -436,7 +439,11 @@ class CardFlippedEvent:
 class CardJuicedEvent:
     type: Literal["card_juiced"] = "card_juiced"
     t: float
-    card: int  # the joker behind a scored or held card's effect wiggles
+    # a card wiggles: the joker behind a scored or held card's effect, the Uncommon Joker that
+    # Baseball Card multiplies, a card that Midas Mask turns Gold or that Vampire drains
+    card: int
+    scale: float | None = 0.7  # Card:juice_up's arguments; null: its defaults
+    rot: float | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -809,6 +816,10 @@ class ProgressView:
     challenges_unlocked: int  # the first N challenges (catalog order) are open
     deck_stakes: dict[str, int]  # deck key -> the highest stake won with it
     max_stakes: dict[str, int]  # deck key -> the highest stake a new run can have with it
+    # the profile's career stats (c_face_cards_played, c_jokers_sold ...) and how many times each voucher
+    # was redeemed: a locked card's unlock condition shows how far the player is (e.g. "(287)")
+    career_stats: dict[str, Number] = field(default_factory=dict)
+    voucher_usage: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, kw_only=True)

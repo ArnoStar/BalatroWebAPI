@@ -151,3 +151,15 @@ def test_profiles(client: TestClient) -> None:
     assert client.get(f"{API}/players/alice", headers=DEV).json()["stats"] is not None
     r = client.get(f"{API}/players/nobody", headers=BOB)
     assert r.status_code == 404 and r.json()["code"] == "player_not_found"
+
+
+def test_the_progress_has_the_career_stats_of_unlock_conditions(client: TestClient) -> None:
+    before = client.get(f"{API}/players/me", headers=ALICE).json()["progress"]
+    assert before["career_stats"] == {} and before["voucher_usage"] == {}
+    game = client.post(f"{API}/games", json={}, headers=ALICE).json()  # (unseeded: it counts)
+    game = client.post(f"{API}/games/{game['id']}/actions", json={"type": "select_blind"}, headers=ALICE).json()["game"]
+    while game["phase"] == "playing":
+        game = client.post(f"{API}/games/{game['id']}/actions", json={"type": "play", "cards": [game["hand"][0]["id"]]},
+                           headers=ALICE).json()["game"]
+    after = client.get(f"{API}/players/me", headers=ALICE).json()["progress"]
+    assert after["career_stats"]["c_losses"] == 1 and after["career_stats"]["c_hands_played"] == 4

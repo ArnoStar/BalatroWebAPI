@@ -179,6 +179,17 @@ class GetGame:
         return self.engine.view(owned_run(self.games, player, game_id))
 
 
+class GetGameSummary:
+    """One of the caller's runs as the run list shows it (other services read it with the player's
+    token: the social service, to share a run)."""
+
+    def __init__(self, games: GameRepository) -> None:
+        self.games = games
+
+    def __call__(self, player: Player, game_id: str) -> GameSummaryView:
+        return summary_view(owned_run(self.games, player, game_id).summary())
+
+
 class ListGames:
     def __init__(self, games: GameRepository) -> None:
         self.games = games
@@ -413,6 +424,7 @@ class UseCases:
     create_game: CreateGame
     import_game: ImportGame
     get_game: GetGame
+    game_summary: GetGameSummary
     list_games: ListGames
     delete_game: DeleteGame
     legal_actions: GetLegalActions
@@ -430,6 +442,7 @@ class UseCases:
     player_profile: GetPlayerProfile
 
 
-__all__ = ["Authenticate", "CreateGame", "DeleteGame", "GetCatalog", "GetGame", "GetGlobalStats", "GetHistory",
+__all__ = ["Authenticate", "CreateGame", "DeleteGame", "GetCatalog", "GetGame", "GetGameSummary", "GetGlobalStats",
+           "GetHistory",
            "GetLeaderboard", "GetLegalActions", "GetMe", "GetPlayerProfile", "GetPlayerStats", "ImportGame",
            "ListGames", "PlayAction", "PreviewHand", "RunDebugCommand", "UpdateMe", "UseCases", "WatchGame"]

@@ -86,7 +86,8 @@ def progress_view(p: Profile, all_unlocked: bool, can_unlock_all: bool) -> Progr
         discovered=sorted(p.discovered), challenges_completed=sorted(p.challenges_completed),
         challenges_unlocked=total if everything else p.challenges_unlocked(total),
         deck_stakes={d: p.deck_win_stake(d) for d in _decks() if p.deck_win_stake(d) > 0} if not p.all else {},
-        max_stakes={d: 8 if everything else p.max_stake(d) for d in _decks()})
+        max_stakes={d: 8 if everything else p.max_stake(d) for d in _decks()},
+        career_stats=dict(p.career_stats), voucher_usage=dict(p.voucher_usage))
 
 
 def collection_view(p: Profile) -> CollectionView:

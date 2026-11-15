@@ -11,6 +11,7 @@ named here are in [Data models](models.md).
 | `POST` | [`/games`](#post-games) | Start a run |
 | `GET` | [`/games`](#get-games) | List runs |
 | `GET` | [`/games/{id}`](#get-gamesid) | The run as the player sees it |
+| `GET` | [`/games/{id}/summary`](#get-gamesidsummary) | One run as the run list shows it |
 | `DELETE` | [`/games/{id}`](#delete-gamesid) | Delete a run |
 | `GET` | [`/games/{id}/actions`](#get-gamesidactions) | What the player can do now |
 | `POST` | [`/games/{id}/actions`](#post-gamesidactions) | Act |
@@ -162,6 +163,16 @@ can see now, and `actions`, what they can do.
 Reading a run never changes it. Call it whenever the front end needs to
 resync, for example on page load, after a `version_conflict`, or after a
 network error.
+
+---
+
+## `GET /games/{id}/summary`
+
+Returns `200` with the run as [`GET /games`](#get-games) lists it (a
+`GameSummaryView`: settings, phase, ante, round, money, `won`, `best_hand`,
+`counted`), or `404 game_not_found` when it isn't one of the caller's runs.
+Other services read it with the player's own token: the social service
+(BalatroSocialService) when the player shares a run with friends.
 
 ---
 
