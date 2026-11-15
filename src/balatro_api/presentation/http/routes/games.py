@@ -65,6 +65,12 @@ def get_game(game_id: str, player: CurrentPlayer, uses: Uses) -> GameView:
     return uses.get_game(player, game_id)
 
 
+@router.get("/{game_id}/summary", response_model=GameSummaryView, summary="The run as the run list shows it")
+def game_summary(game_id: str, player: CurrentPlayer, uses: Uses) -> GameSummaryView:
+    """One of the caller's runs, as ``GET /games`` lists it (with its best hand and whether it counts)."""
+    return uses.game_summary(player, game_id)
+
+
 @router.delete("/{game_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a run")
 def delete_game(game_id: str, player: CurrentPlayer, uses: Uses) -> Response:
     uses.delete_game(player, game_id)

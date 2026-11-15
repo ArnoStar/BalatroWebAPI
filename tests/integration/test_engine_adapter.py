@@ -225,3 +225,34 @@ def test_stats_are_the_engines_profile():
     engine.commit(run, act_debug)
     won = engine.apply_debug(run, {"cmd": "cheat", "win": True})
     assert won.stats.jokers["j_joker"].rounds == 1 and won.stats.boss_streak == 0
+
+
+
+def test_juiced_cards_come_with_juice_ups_arguments():
+    from balatro_api.infrastructure.engine import presenter
+    events = presenter.feedback_events([
+        {"type": "card_juiced", "t": 0.1, "card": 3, "scale": 0.5, "rot": 0.5},
+        {"type": "card_juiced", "t": 0.2, "card": 4, "scale": None, "rot": None},
+        {"type": "card_juiced", "t": 0.3, "card": 5},  # (engines before 0.5.1: juice_card's 0.7)
+    ], None)
+    assert [(e.card, e.scale, e.rot) for e in events] == [(3, 0.5, 0.5), (4, None, None), (5, 0.7, None)]
+
+
+def test_the_blind_select_says_which_hand_an_orbital_tag_levels_up():
+    # create_UIBox_blind_choice chose a hand per blind for this ante: Tag:set_ability shows it
+    from balatro_api.infrastructure.engine import presenter
+    G = Game("TESTSEED").start_run()
+    chosen = G.GAME.orbital_choices[G.GAME.round_resets.ante]
+    G.GAME.round_resets.blind_tags["Small"] = "tag_orbital"
+    G.GAME.round_resets.blind_tags["Big"] = "tag_economy"
+    view = presenter.blind_select_view(G)
+    assert view is not None
+    tags = {c.slot: c.skip_tag for c in view.choices}
+    assert tags["Small"] is not None and tags["Small"].orbital_hand == chosen["Small"] and chosen["Small"]
+    assert tags["Big"] is not None and tags["Big"].orbital_hand is None and tags["Boss"] is None
+
+
+def test_the_shop_slots_follow_overstock():
+    engine = BalatroEngine()
+    assert engine.view(new_run(engine, "red")).shop_slots == 2
+    assert engine.view(new_run(engine, "zodiac", deck="b_zodiac")).shop_slots == 3  # it starts with Overstock

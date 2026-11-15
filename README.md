@@ -61,6 +61,7 @@ returns the new `GameView` together with `events`.
 | `POST /api/v1/games` | Start a run (`seed` optional, `deck`, `stake` 1-8, `challenge`, `game_speed`) |
 | `GET /api/v1/games` | Runs, most recently played first (`limit`, `offset`) |
 | `GET /api/v1/games/{id}` | The run as the player sees it |
+| `GET /api/v1/games/{id}/summary` | One of your runs as the run list shows it (best hand, counted): the social service reads it with your token to share a run |
 | `DELETE /api/v1/games/{id}` | Delete a run |
 | `GET /api/v1/games/{id}/actions` | What can be done now (also in the `GameView`) |
 | `POST /api/v1/games/{id}/actions` | Act (`pointer`, optional: the player's pointer since the previous action, kept to show it when the run is watched; it changes nothing in the game) |
@@ -126,7 +127,7 @@ is the time in seconds at which the game shows it (at the run's game speed,
 |---|---|
 | `card_moved` | a card arrives in an area (`to`: `hand`, `play`, `discard`, `jokers` ...) |
 | `card_flipped`, `card_removed` | a card turns over (face up: with its `view`), a card leaves the game |
-| `card_juiced` | the joker behind a scored or held card's effect wiggles (`card`) |
+| `card_juiced` | a card wiggles (`card`, `scale`, `rot`): the joker behind a scored or held card's effect, the Uncommon Joker Baseball Card multiplies, a card Midas Mask or Vampire changes |
 | `card_changed` | a card shines with its new `edition` or `seal` (`change`), with its `view` |
 | `attention_text` | a big text over a card (`key`: `k_nope_ex`, The Wheel of Fortune's "Nope!") |
 | `hand` | the scoring panel: `hand`, `level`, `chips`, `mult`, `hand_score` (only what changes) |

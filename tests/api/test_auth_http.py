@@ -43,7 +43,10 @@ def test_runs_are_private(client: TestClient) -> None:
 
     assert [g["id"] for g in client.get(f"{API}/games", headers=ALICE).json()] == [game["id"]]
     assert client.get(f"{API}/games", headers=BOB).json() == []
+    summary = client.get(f"{path}/summary", headers=ALICE).json()
+    assert summary["id"] == game["id"] and summary["counted"] is False and summary["best_hand"] == 0
     for method, url, body in [("GET", path, None), ("GET", f"{path}/actions", None), ("GET", f"{path}/history", None),
+                              ("GET", f"{path}/summary", None),
                               ("POST", f"{path}/actions", {"type": "select_blind"}),
                               ("POST", f"{path}/preview", {"cards": []}), ("DELETE", path, None)]:
         r = client.request(method, url, json=body, headers=BOB)

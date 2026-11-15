@@ -180,6 +180,15 @@ def _tag(G: Game, t: Any) -> TagView:
                    orbital_hand=t.ability.orbital_hand if t.key == "tag_orbital" else None)
 
 
+def _skip_tag(G: Game, slot: str, key: str) -> TagView:
+    # Tag:set_ability: an Orbital Tag offered for skipping a blind levels up the hand the blind select
+    # chose for this ante and blind (create_UIBox_blind_choice: G.GAME.orbital_choices)
+    hand = None
+    if key == "tag_orbital":
+        hand = ((G.GAME.orbital_choices or {}).get(G.GAME.round_resets.ante) or {}).get(slot)
+    return TagView(key=key, name=G.data.display_name(key), orbital_hand=hand)
+
+
 def blind_select_view(G: Game) -> BlindSelectView | None:
     if G.STATE != STATES.BLIND_SELECT:
         return None
@@ -195,7 +204,7 @@ def blind_select_view(G: Game) -> BlindSelectView | None:
             slot=slot, key=key, name=G.data.display_name(key), state=rr.blind_states[slot],
             chips=G.get_blind_amount(rr.blind_ante) * proto.mult * GAME.starting_params.ante_scaling,
             reward=0 if no_reward.get(slot) else proto.dollars,
-            skip_tag=TagView(key=tag_key, name=G.data.display_name(tag_key)) if tag_key else None))
+            skip_tag=_skip_tag(G, slot, tag_key) if tag_key else None))
     return BlindSelectView(on_deck=GAME.blind_on_deck or "Small", choices=choices,
                            boss_reroll_cost=10 if G.can_reroll_boss() else None)
 
@@ -280,6 +289,7 @@ def game_view(run: Run, G: Game) -> GameView:
         hand_size=G.hand.config.card_limit,
         joker_slots=G.jokers.config.card_limit,
         consumable_slots=G.consumeables.config.card_limit,
+        shop_slots=GAME.shop.joker_max,
         round_score=GAME.chips,
         blind=blind_view(G),
         blind_select=blind_select_view(G),
@@ -342,7 +352,7 @@ def feedback_events(entries: list[dict[str, Any]], G: Game | None = None) -> lis
             view = card_view(G, found[0], found[1], face_up=True) if G is not None and found else None
             out.append(CardFlippedEvent(t=t, card=e["card"], face_down=face_down, view=view))
         elif kind == "card_juiced":
-            out.append(CardJuicedEvent(t=t, card=e["card"]))
+            out.append(CardJuicedEvent(t=t, card=e["card"], scale=e.get("scale", 0.7), rot=e.get("rot")))
         elif kind == "card_changed" and e["change"] in ("edition", "seal"):
             found = _find_card(G, e["card"]) if G is not None else None
             out.append(CardChangedEvent(t=t, card=e["card"], change=e["change"],
