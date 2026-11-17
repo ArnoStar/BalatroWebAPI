@@ -19,7 +19,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from balatro_api.domain import Command, GameNotFound, GameSettings, Phase, Progress, Run, RunSummary
+from balatro_api.domain import Command, GameNotFound, GameSettings, IllegalAction, Phase, Progress, Run, RunSummary
 
 from .dto import (
     ActionResult,
@@ -47,6 +47,17 @@ from .dto import (
 )
 from .errors import DebugCommandsDisabled, ImportForbidden, PlayerNotFound, UnlockAllForbidden
 from .locks import RunLocks
+from .matches import (
+    ChangeMatchSettings,
+    CreateMatch,
+    CurrentMatch,
+    GetMatch,
+    JoinMatch,
+    LeaveMatch,
+    Matches,
+    StartMatch,
+    VoteBlind,
+)
 from .permissions import Permission, allowed
 from .ports import Authenticator, BoardRow, Clock, GameEngine, GameRepository, IdGenerator, Outcome
 from .statistics import player_stats, score
@@ -56,7 +67,7 @@ log = logging.getLogger(__name__)
 
 def settings_view(s: GameSettings) -> SettingsView:
     return SettingsView(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
-                        seeded=s.seeded)
+                        seeded=s.seeded, mode=s.mode)
 
 
 def owned_run(games: GameRepository, player: Player, game_id: str) -> Run:
@@ -204,7 +215,8 @@ class DeleteGame:
 
     def __call__(self, player: Player, game_id: str) -> None:
         with self.locks.hold(game_id):
-            owned_run(self.games, player, game_id)
+            if owned_run(self.games, player, game_id).match_id is not None:
+                raise IllegalAction("a match's run stays with the match")
             self.games.delete(game_id)
             self.engine.forget(game_id)
 
@@ -288,16 +300,28 @@ class _ChangeRun:
 
 
 class PlayAction(_ChangeRun):
+    """A player action on one of their runs; a run of a match goes through the match's rules (matches.py)."""
+
+    def __init__(self, engine: GameEngine, games: GameRepository, locks: RunLocks, clock: Clock,
+                 matches: Matches | None = None) -> None:
+        super().__init__(engine, games, locks, clock)
+        self.matches = matches
+
     def __call__(self, player: Player, game_id: str, action: PlayerAction,
                  expected_version: int | None = None, pointer: dict[str, Any] | None = None) -> ActionResult:
         """``pointer``: the player's pointer before the action, kept for watching the run again."""
+        run = owned_run(self.games, player, game_id)
         if action.type == "continue":
             # (recorded only when continuing changes the run: otherwise the history would fill with no-ops)
-            run = owned_run(self.games, player, game_id)
             if run.finished or not self.engine.continues(run):
                 return ActionResult(game=self.engine.view(run), events=[])
-        return self._change(player, game_id, expected_version, lambda run: self.engine.apply(run, action),
-                            pointer=pointer)
+
+        def act() -> ActionResult:
+            return self._change(player, game_id, expected_version, lambda run: self.engine.apply(run, action),
+                                pointer=pointer)
+        if run.match_id is not None and self.matches is not None:
+            return self.matches.play(player, run, action.type, act)
+        return act()
 
 
 class RunDebugCommand(_ChangeRun):
@@ -307,18 +331,24 @@ class RunDebugCommand(_ChangeRun):
     doesn't count for statistics."""
 
     def __init__(self, engine: GameEngine, games: GameRepository, locks: RunLocks, clock: Clock,
-                 enabled: bool) -> None:
+                 enabled: bool, matches: Matches | None = None) -> None:
         super().__init__(engine, games, locks, clock)
         self.enabled = enabled
+        self.matches = matches
 
     def __call__(self, player: Player, game_id: str, command: dict[str, Any],
                  expected_version: int | None = None) -> ActionResult:
+        run = owned_run(self.games, player, game_id)
         # (a replay may play the debug commands of the run it copies)
-        if not (self.enabled or allowed(player, Permission.DEBUG_COMMANDS)) and not owned_run(
-                self.games, player, game_id).replay:
+        if not (self.enabled or allowed(player, Permission.DEBUG_COMMANDS)) and not run.replay:
             raise DebugCommandsDisabled()
-        return self._change(player, game_id, expected_version, lambda run: self.engine.apply_debug(run, command),
-                            debug=True)
+
+        def act() -> ActionResult:
+            return self._change(player, game_id, expected_version, lambda run: self.engine.apply_debug(run, command),
+                                debug=True)
+        if run.match_id is not None and self.matches is not None:
+            return self.matches.play(player, run, "debug", act)  # (the match catches up after it)
+        return act()
 
 
 class GetCatalog:
@@ -440,6 +470,14 @@ class UseCases:
     me: GetMe
     update_me: UpdateMe
     player_profile: GetPlayerProfile
+    create_match: CreateMatch
+    join_match: JoinMatch
+    get_match: GetMatch
+    current_match: CurrentMatch
+    change_match: ChangeMatchSettings
+    start_match: StartMatch
+    vote_blind: VoteBlind
+    leave_match: LeaveMatch
 
 
 __all__ = ["Authenticate", "CreateGame", "DeleteGame", "GetCatalog", "GetGame", "GetGameSummary", "GetGlobalStats",

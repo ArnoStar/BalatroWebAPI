@@ -21,6 +21,8 @@ from typing import Any
 import balatro
 from balatro import DECK_NAMES, Game, Profile
 from balatro.data import load
+from balatro.mods import pvp as pvp_rules
+from balatro.mods.pvp import PvP
 from balatro.rng import SEED_ALPHABET, normalize_seed
 
 from balatro_api.application.dto import (
@@ -29,11 +31,12 @@ from balatro_api.application.dto import (
     GameView,
     HandPreview,
     LegalAction,
+    OpponentView,
     PlayerAction,
     ProgressView,
 )
 from balatro_api.application.locks import RunLocks
-from balatro_api.application.ports import Outcome
+from balatro_api.application.ports import MatchRecord, Outcome, PvPState
 from balatro_api.domain import (
     Command,
     GameSettings,
@@ -89,16 +92,18 @@ class BalatroEngine:
             if deck not in {c.key for c in data.P_CENTER_POOLS["Back"]}:
                 raise InvalidGameSettings(f"unknown deck {settings.deck!r}")
         return GameSettings(seed=normalize_seed(settings.seed), deck=deck, stake=stake, challenge=settings.challenge,
-                            game_speed=settings.game_speed, seeded=settings.seeded)
+                            game_speed=settings.game_speed, seeded=settings.seeded, mode=settings.mode)
 
     # ------------------------------------------------------------ games
     @staticmethod
     def _new_game(s: GameSettings, start_profile: dict[str, Any] | None) -> Game:
         # a run from before progress was kept: fully unlocked, and played as the engine played every run then
+        mods = [s.mode] if s.mode else None  # a multiplayer mode's rules (the engine's mods)
         if start_profile is None:
-            return Game(s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed).start_run()
+            return Game(s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
+                        mods=mods).start_run()
         return Game(s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
-                    profile=Profile.from_json(start_profile), seeded=s.seeded).start_run()
+                    profile=Profile.from_json(start_profile), seeded=s.seeded, mods=mods).start_run()
 
     def _replay(self, run: Run) -> Game:
         G = self._new_game(run.settings, run.start_profile)
@@ -253,6 +258,40 @@ class BalatroEngine:
 
     def collection(self, profile: dict[str, Any]) -> CollectionView:
         return progress.collection_view(Profile.from_json(profile))
+
+    # ------------------------------------------------------------ multiplayer
+    def apply_command(self, run: Run, command: dict[str, Any]) -> Outcome:
+        with self._game(run) as G:
+            copy = G.clone()
+        return self._play(copy, dict(command))
+
+    def match_record(self, run: Run) -> MatchRecord:
+        with self._game(run) as G:
+            pvp = G.mod("pvp")
+            blinds = [dict(b) for b in pvp.blinds] if isinstance(pvp, PvP) else []
+            return MatchRecord(blinds=blinds, phase=presenter.phase(G), game_over=G.is_game_over(),
+                               can_skip=G.can_skip_blind(), version=run.version)
+
+    def timeout_command(self, run: Run) -> dict[str, Any] | None:
+        with self._game(run) as G:
+            pvp = G.mod("pvp")
+            if not isinstance(pvp, PvP):
+                return None
+            try:
+                command: dict[str, Any] | None = pvp.timeout_command(G)
+            except balatro.IllegalAction:
+                return None
+            return command
+
+    def pvp_state(self, blinds: Sequence[list[dict[str, Any]]], eliminated: Sequence[bool]) -> PvPState:
+        s = pvp_rules.match_state([list(b) for b in blinds], eliminated=list(eliminated))
+        return PvPState(hp=s["hp"], rounds=s["rounds"], over=s["over"], winner=s["winner"],
+                        start_hp=pvp_rules.START_HP, safe_antes=pvp_rules.SAFE_ANTES,
+                        loss_damage=pvp_rules.LOSS_DAMAGE)
+
+    def opponent_view(self, run: Run) -> OpponentView:
+        with self._game(run) as G:
+            return presenter.opponent_view(run, G)
 
     def commit(self, run: Run, outcome: Outcome) -> None:
         if not isinstance(outcome.state, Game):

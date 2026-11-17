@@ -18,13 +18,30 @@ from balatro_api.application.errors import (
     PlayerNotFound,
     UnlockAllForbidden,
 )
-from balatro_api.domain import DomainError, GameNotFound, IllegalAction, InvalidGameSettings, Locked, VersionConflict
+from balatro_api.domain import (
+    DomainError,
+    GameNotFound,
+    IllegalAction,
+    InAnotherMatch,
+    InvalidGameSettings,
+    Locked,
+    MatchFull,
+    MatchNotFound,
+    MatchStarted,
+    NotMatchHost,
+    VersionConflict,
+)
 
 log = logging.getLogger(__name__)
 
 STATUS: list[tuple[type[DomainError], int]] = [
     (GameNotFound, 404),
     (PlayerNotFound, 404),
+    (MatchNotFound, 404),  # (and a match the player isn't in)
+    (MatchFull, 409),
+    (MatchStarted, 409),
+    (InAnotherMatch, 409),
+    (NotMatchHost, 403),
     (Locked, 409),  # the player hasn't unlocked that deck, stake or challenge yet
     (UnlockAllForbidden, 403),
     (VersionConflict, 409),
@@ -52,6 +69,8 @@ def install(app: FastAPI) -> None:
         extra: dict[str, Any] = {}
         if isinstance(exc, VersionConflict):
             extra = {"expected_version": exc.expected, "current_version": exc.actual}
+        elif isinstance(exc, InAnotherMatch):
+            extra = {"match_id": exc.match_id}
         headers = {"WWW-Authenticate": 'Bearer error="invalid_token"'} if isinstance(exc, NotAuthenticated) else None
         return problem(status, exc.code, exc.message, headers, **extra)
 

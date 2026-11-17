@@ -5,6 +5,7 @@ JWTs, checked with the public keys it publishes at ``/.well-known/jwks.json``
 from __future__ import annotations
 
 import logging
+import re
 from typing import Protocol
 
 import jwt
@@ -60,11 +61,19 @@ class JwtAuthenticator:
         return Player(id=str(claims["sub"]), name=name if isinstance(name, str) else None, roles=roles)
 
 
+DEV_NAME = re.compile(r"^dev:([A-Za-z0-9_-]{1,24})$")
+
+
 class AnonymousAuthenticator:
     """No sign-in: everyone is the same player (development, tests, and the
-    front end's frame-by-frame tools)."""
+    front end's frame-by-frame tools).  To try multiplayer on such a server, a
+    caller may name itself with the token ``dev:<name>`` (player
+    ``local:<name>``): there is no account to protect here."""
 
     required = False
 
     def authenticate(self, token: str | None) -> Player:
+        m = DEV_NAME.match(token or "")
+        if m:
+            return Player(id=f"{ANONYMOUS_PLAYER}:{m.group(1)}", name=m.group(1))
         return Player(id=ANONYMOUS_PLAYER)
