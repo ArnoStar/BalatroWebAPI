@@ -4,9 +4,21 @@ the adapters and builds the use cases with them."""
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from .application.locks import RunLocks
-from .application.ports import Authenticator, Clock, GameEngine, GameRepository, IdGenerator
+from .application.matches import (
+    ChangeMatchSettings,
+    CreateMatch,
+    CurrentMatch,
+    GetMatch,
+    JoinMatch,
+    LeaveMatch,
+    Matches,
+    StartMatch,
+    VoteBlind,
+)
+from .application.ports import Authenticator, Clock, GameEngine, GameRepository, IdGenerator, MatchRepository
 from .application.use_cases import (
     Authenticate,
     CreateGame,
@@ -55,7 +67,8 @@ def build_repository(settings: Settings) -> GameRepository:
 
 def build_use_cases(settings: Settings, engine: GameEngine | None = None, games: GameRepository | None = None,
                     ids: IdGenerator | None = None, clock: Clock | None = None,
-                    authenticator: Authenticator | None = None) -> UseCases:
+                    authenticator: Authenticator | None = None,
+                    match_repository: MatchRepository | None = None) -> UseCases:
     engine = engine or BalatroEngine(cache_size=settings.cache_size)
     if games is None:
         games = build_repository(settings)
@@ -63,6 +76,8 @@ def build_use_cases(settings: Settings, engine: GameEngine | None = None, games:
     clock = clock or SystemClock()
     locks = RunLocks()
     me = GetMe(engine, games, settings.debug_commands)
+    # (the repositories here keep matches too)
+    matches = Matches(engine, games, match_repository or cast(MatchRepository, games), locks, clock, ids)
     return UseCases(
         authenticate=Authenticate(authenticator or build_authenticator(settings)),
         create_game=CreateGame(engine, games, ids, clock, settings.debug_commands),
@@ -72,10 +87,11 @@ def build_use_cases(settings: Settings, engine: GameEngine | None = None, games:
         list_games=ListGames(games),
         delete_game=DeleteGame(engine, games, locks),
         legal_actions=GetLegalActions(engine, games),
-        play_action=PlayAction(engine, games, locks, clock),
+        play_action=PlayAction(engine, games, locks, clock, matches),
         preview_hand=PreviewHand(engine, games),
         history=GetHistory(games),
-        debug_command=RunDebugCommand(engine, games, locks, clock, enabled=settings.debug_commands),
+        debug_command=RunDebugCommand(engine, games, locks, clock, enabled=settings.debug_commands,
+                                      matches=matches),
         catalog=GetCatalog(engine),
         player_stats=GetPlayerStats(games, clock),
         leaderboard=GetLeaderboard(games),
@@ -84,4 +100,12 @@ def build_use_cases(settings: Settings, engine: GameEngine | None = None, games:
         me=me,
         update_me=UpdateMe(games, me),
         player_profile=GetPlayerProfile(engine, games, clock),
+        create_match=CreateMatch(matches),
+        join_match=JoinMatch(matches),
+        get_match=GetMatch(matches),
+        current_match=CurrentMatch(matches),
+        change_match=ChangeMatchSettings(matches),
+        start_match=StartMatch(matches),
+        vote_blind=VoteBlind(matches),
+        leave_match=LeaveMatch(matches),
     )

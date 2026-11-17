@@ -38,6 +38,8 @@ from balatro_api.domain import (
     Command,
     GameNotFound,
     GameSettings,
+    Match,
+    MatchNotFound,
     Phase,
     Progress,
     Run,
@@ -111,11 +113,31 @@ MIGRATIONS: tuple[str, ...] = (
         PRIMARY KEY (run_id, version)
     );
     """,
+    # 5: multiplayer: a run's mode and match, and the matches (the rest of a match is a JSON document)
+    """
+    ALTER TABLE runs ADD COLUMN mode TEXT;
+    ALTER TABLE runs ADD COLUMN match_id TEXT;
+    CREATE TABLE matches (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        host TEXT NOT NULL,
+        status TEXT NOT NULL,
+        players TEXT[] NOT NULL,
+        doc JSONB NOT NULL,
+        version INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+    );
+    CREATE INDEX matches_lobby_code ON matches (code) WHERE status = 'lobby';
+    CREATE INDEX matches_players ON matches USING GIN (players);
+    """,
 )
 
 RUN_COLUMNS = ("id", "owner", "seed", "seeded", "deck", "stake", "challenge", "game_speed", "engine_version", "version",
                "phase", "ante", "round", "dollars", "won", "debug", "best_hand", "furthest_ante", "furthest_round",
-               "most_money", "boss_streak", "stats", "created_at", "updated_at", "replay", "tracks_progress")
+               "most_money", "boss_streak", "stats", "created_at", "updated_at", "replay", "tracks_progress", "mode",
+               "match_id")
 SELECT_RUNS = sql.SQL("SELECT {} FROM runs").format(sql.SQL(", ").join(sql.Identifier(c) for c in RUN_COLUMNS))
 BOARD_COLUMNS = {"best_hand": "best_hand", "highest_ante": "furthest_ante", "highest_round": "furthest_round",
                  "most_money": "most_money", "boss_streak": "boss_streak"}
@@ -189,7 +211,7 @@ class PostgresGameRepository:
     @staticmethod
     def _summary(row: DictRow) -> RunSummary:
         settings = GameSettings(seed=row["seed"], deck=row["deck"], stake=row["stake"], challenge=row["challenge"],
-                                game_speed=row["game_speed"], seeded=row["seeded"])
+                                game_speed=row["game_speed"], seeded=row["seeded"], mode=row["mode"])
         progress = Progress(phase=Phase(row["phase"]), ante=row["ante"], round=row["round"], dollars=row["dollars"],
                             won=row["won"])
         stats = RunStats.from_json(row["stats"], best_hand=row["best_hand"], furthest_ante=row["furthest_ante"],
@@ -228,6 +250,7 @@ class PostgresGameRepository:
         values = {"id": run.id, "owner": run.owner, "seed": s.seed, "seeded": s.seeded, "deck": s.deck,
                   "stake": s.stake, "challenge": s.challenge, "game_speed": s.game_speed,
                   "engine_version": run.engine_version, "created_at": run.created_at, "replay": run.replay,
+                  "mode": s.mode, "match_id": run.match_id,
                   "start_profile": Jsonb(run.start_profile) if run.start_profile is not None else None,
                   "tracks_progress": run.tracks_progress, **self._cached(run)}
         query = sql.SQL("INSERT INTO runs ({}) VALUES ({})").format(
@@ -251,7 +274,7 @@ class PostgresGameRepository:
         return Run(id=s.id, settings=s.settings, engine_version=row["engine_version"], progress=s.progress,
                    created_at=s.created_at, updated_at=s.updated_at, commands=commands, owner=s.owner,
                    owner_name=name["name"] if name else None, stats=s.stats, debug=s.debug, replay=s.replay,
-                   start_profile=start["start_profile"] if start else None)
+                   match_id=row["match_id"], start_profile=start["start_profile"] if start else None)
 
     def save(self, run: Run, expected_version: int) -> None:
         values = self._cached(run)
@@ -323,7 +346,7 @@ class PostgresGameRepository:
 
     def list(self, owner: str, limit: int, offset: int) -> list[RunSummary]:
         with self._tx() as conn:
-            rows = conn.execute(sql.SQL("{} WHERE owner = %s AND NOT replay ORDER BY updated_at DESC "
+            rows = conn.execute(sql.SQL("{} WHERE owner = %s AND NOT replay AND mode IS NULL ORDER BY updated_at DESC "
                                         "LIMIT %s OFFSET %s").format(SELECT_RUNS), (owner, limit, offset)).fetchall()
         return [self._summary(r) for r in rows]
 
@@ -332,6 +355,54 @@ class PostgresGameRepository:
             rows = conn.execute(sql.SQL("{} WHERE owner = %s ORDER BY updated_at").format(SELECT_RUNS),
                                 (owner,)).fetchall()
         return [self._summary(r) for r in rows]
+
+    # ------------------------------------------------------------ matches
+    @staticmethod
+    def _match(row: DictRow) -> Match:
+        return Match.from_doc(id=row["id"], code=row["code"], mode=row["mode"], host=row["host"], status=row["status"],
+                              created_at=row["created_at"], updated_at=row["updated_at"], version=row["version"],
+                              doc=row["doc"])
+
+    def add_match(self, match: Match) -> None:
+        with self._tx() as conn:
+            conn.execute("INSERT INTO matches (id, code, mode, host, status, players, doc, version, created_at, "
+                         "updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                         (match.id, match.code, match.mode, match.host, match.status.value,
+                          [p.id for p in match.players], Jsonb(match.to_doc()), match.version, match.created_at,
+                          match.updated_at))
+
+    def get_match(self, match_id: str) -> Match:
+        with self._tx() as conn:
+            row = conn.execute("SELECT * FROM matches WHERE id = %s", (match_id,)).fetchone()
+        if row is None:
+            raise MatchNotFound(match_id)
+        return self._match(row)
+
+    def match_by_code(self, code: str) -> Match:
+        with self._tx() as conn:
+            row = conn.execute("SELECT * FROM matches WHERE code = %s AND status = 'lobby' "
+                               "ORDER BY updated_at DESC LIMIT 1", (code,)).fetchone()
+        if row is None:
+            raise MatchNotFound(code)
+        return self._match(row)
+
+    def current_match(self, player_id: str) -> Match | None:
+        with self._tx() as conn:
+            row = conn.execute("SELECT * FROM matches WHERE players @> ARRAY[%s]::text[] AND status <> 'finished' "
+                               "ORDER BY updated_at DESC LIMIT 1", (player_id,)).fetchone()
+        return self._match(row) if row else None
+
+    def save_match(self, match: Match, expected_version: int) -> None:
+        with self._tx() as conn:
+            cur = conn.execute("UPDATE matches SET status = %s, players = %s, doc = %s, version = %s, updated_at = %s "
+                               "WHERE id = %s AND version = %s",
+                               (match.status.value, [p.id for p in match.players], Jsonb(match.to_doc()),
+                                expected_version + 1, match.updated_at, match.id, expected_version))
+            if cur.rowcount != 1:
+                row = conn.execute("SELECT version FROM matches WHERE id = %s", (match.id,)).fetchone()
+                if row is None:
+                    raise MatchNotFound(match.id)
+                raise VersionConflict(expected_version, row["version"])
 
     # ------------------------------------------------------------ everyone
     def leaderboard(self, board: LeaderboardName, deck: str | None, stake: int | None, limit: int,

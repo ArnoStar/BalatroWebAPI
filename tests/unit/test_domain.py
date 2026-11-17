@@ -47,3 +47,40 @@ def test_nothing_happens_after_game_over():
     with pytest.raises(GameOver):
         r.record(Command({"cmd": "select_blind"}), r.progress, NOW)
     assert r.version == 0
+
+
+def test_match_votes_and_leaving():
+    from datetime import UTC, datetime
+
+    from balatro_api.domain import IllegalAction, Match, MatchFull, MatchPlayer, MatchStarted
+
+    t = datetime(2026, 1, 1, tzinfo=UTC)
+    m = Match(id="m", code="ABCDEF", mode="pvp", host="a", created_at=t, updated_at=t, players=[MatchPlayer(id="a")])
+    assert m.join(MatchPlayer(id="b"), t) == 1 and m.join(MatchPlayer(id="b"), t) == 1
+    with pytest.raises(MatchFull):
+        m.join(MatchPlayer(id="c"), t)
+    with pytest.raises(IllegalAction):
+        m.vote(0, 0, "skip", t)  # (not started)
+    m.start("SEED", ["ra", "rb"], t)
+    with pytest.raises(MatchStarted):
+        m.join(MatchPlayer(id="c"), t)
+    m.vote(0, 0, "skip", t)
+    m.vote(0, 0, "select", t)  # changed while the other hasn't chosen
+    assert m.decision(0) is None
+    m.vote(1, 0, "skip", t)
+    assert m.decision(0) == "select"
+    with pytest.raises(IllegalAction):
+        m.vote(0, 0, "skip", t)  # decided
+    m.vote(0, 1, "skip", t)
+    m.vote(1, 1, "skip", t)
+    assert m.decision(1) == "skip"
+    m.leave("b", t)
+    assert not m.active and m.winner == 0 and m.result == "left"
+
+
+def test_dev_names_only_without_sign_in():
+    from balatro_api.infrastructure.auth import AnonymousAuthenticator
+
+    auth = AnonymousAuthenticator()
+    assert auth.authenticate("dev:ann").id == "local:ann" and auth.authenticate("dev:ann").name == "ann"
+    assert auth.authenticate("dev:no way").id == "local" and auth.authenticate(None).id == "local"

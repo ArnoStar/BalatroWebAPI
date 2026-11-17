@@ -272,6 +272,7 @@ class SettingsView:
     challenge: str | None
     game_speed: float
     seeded: bool = False  # the player chose the seed: the run doesn't count for statistics
+    mode: str | None = None  # a multiplayer run's mode ("pvp"), with its rules; None: the game's own rules
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -894,3 +895,135 @@ class WatchView:
     owner_name: str | None
     game: GameView
     steps: list[ReplayStep]
+
+
+# ------------------------------------------------------------------ multiplayer
+MatchMode = Literal["pvp", "coop"]
+MatchStatusName = Literal["lobby", "playing", "finished"]
+BlindChoice = Literal["select", "skip"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class NewMatch:
+    mode: MatchMode = "pvp"
+    deck: str = "b_red"
+    stake: int = 1
+    seed: str | None = None  # None: a random seed (the same for both players)
+    timer: int = 120  # seconds a player has once the other one waits for them
+    game_speed: float = 1.0  # the creator's game speed setting (their run's)
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchSettingsChange:
+    deck: str = "b_red"
+    stake: int = 1
+    seed: str | None = None
+    timer: int = 120
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchSettingsView:
+    deck: str
+    stake: int
+    seed: str | None  # the seed the host chose (None: a random one; the runs show it once started)
+    timer: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchPlayerView:
+    seat: int
+    name: str | None
+    you: bool
+    host: bool
+    left: bool = False  # left the match (it is lost)
+
+
+@dataclass(frozen=True, kw_only=True)
+class OpponentView:
+    """What a player sees of the other player's run: the public part of their game (no hand, no deck order)."""
+
+    version: int  # the run's version (it changes with each of their actions)
+    phase: Phase
+    state: str
+    ante: int
+    round: int
+    dollars: Number
+    hands_left: int
+    discards_left: int
+    hand_size: int
+    joker_slots: int
+    round_score: Score
+    blind: BlindView | None
+    jokers: list[CardView]
+    consumables: int  # how many consumables they hold
+    deck_size: int  # cards in their full deck
+    vouchers: list[str]
+    poker_hands: list[PokerHandView]  # (only the hands they have levelled up or played)
+    won: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class PvPBlindResult:
+    """One blind both players have finished, and what it cost them (index = seat)."""
+
+    index: int  # the blind's place in the match (0: the first Small Blind)
+    ante: int
+    slot: BlindSlot | None
+    chips: list[Score]  # each player's score in the round
+    target: list[Score]  # each player's blind
+    lost: list[bool]  # the player didn't beat the blind
+    skipped: list[bool]
+    damage: list[int]  # hit points each lost
+    hp: list[int]  # each one's hit points after it
+
+
+@dataclass(frozen=True, kw_only=True)
+class BlindVoteView:
+    """Playing or skipping the next blind: it is skipped only if both players skip it."""
+
+    index: int  # the blind's place in the match
+    yours: BlindChoice | None
+    theirs: BlindChoice | None
+    decision: BlindChoice | None  # once both have chosen: what both do now
+
+
+@dataclass(frozen=True, kw_only=True)
+class PvPView:
+    start_hp: int
+    safe_antes: int  # until this ante is over, only a lost round costs hit points
+    loss_damage: int  # the hit points a lost round costs
+    hp: list[int]  # by seat
+    blind_index: int  # your next blind's place in the match (the blinds your run has finished)
+    rounds: list[PvPBlindResult]
+    vote: BlindVoteView | None  # at the blind select
+    # what you are waiting for: "round" (the other player to finish the blind), "vote" (their choice)
+    waiting: Literal["round", "vote"] | None
+    opponent_waiting: Literal["round", "vote"] | None  # what they are waiting for you to do
+    deadline: datetime | None  # when the late player is moved on (the round lost, the shop left ...)
+    can_cash_out: bool  # (no: the other player is still playing the round)
+    opponent: OpponentView | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchResultView:
+    winner: int | None  # the winner's seat; None: a draw (or nobody: the lobby was closed)
+    you_won: bool
+    reason: str  # "hp" (hit points), "game_over" (a run ended), "left" (a player left), "closed" (the lobby)
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchView:
+    id: str
+    version: int
+    code: str  # the invite code (others join with it while in the lobby)
+    mode: MatchMode
+    status: MatchStatusName
+    seat: int  # yours
+    host: bool  # you made it (you choose the settings and start it)
+    settings: MatchSettingsView
+    players: list[MatchPlayerView]
+    run_id: str | None  # your run, once started
+    run_version: int | None  # its version (a run moved on by the timer has a new one)
+    pvp: PvPView | None
+    result: MatchResultView | None
+    server_time: datetime  # (for the timer's countdown)

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
-from balatro_api.domain import Command, GameSettings, Progress, Run, RunStats, RunSummary
+from balatro_api.domain import Command, GameSettings, Match, Phase, Progress, Run, RunStats, RunSummary
 
 from .dto import (
     Catalog,
@@ -20,6 +20,7 @@ from .dto import (
     HandPreview,
     LeaderboardName,
     LegalAction,
+    OpponentView,
     Player,
     PlayerAction,
     ProgressView,
@@ -38,6 +39,32 @@ class Outcome:
     stats: RunStats
     events: list[FeedbackEvent]
     state: object
+
+
+@dataclass(frozen=True)
+class MatchRecord:
+    """What a match needs to know of a run: the blinds it has finished (the
+    engine's PvP records: ante, slot, chips, target, lost, skipped), where it
+    stands, and whether the blind on deck can be skipped."""
+
+    blinds: list[dict[str, Any]]
+    phase: Phase
+    game_over: bool
+    can_skip: bool
+    version: int
+
+
+@dataclass(frozen=True)
+class PvPState:
+    """The engine's PvP rules applied to both runs (see balatro.mods.pvp.match_state)."""
+
+    hp: list[int]
+    rounds: list[dict[str, Any]]
+    over: bool
+    winner: int | None
+    start_hp: int
+    safe_antes: int
+    loss_damage: int
 
 
 class GameEngine(Protocol):
@@ -110,6 +137,23 @@ class GameEngine(Protocol):
 
     def catalog(self) -> Catalog: ...
 
+    # ---------------------------------------------------------- multiplayer
+    def apply_command(self, run: Run, command: dict[str, Any]) -> Outcome:
+        """An engine command the match plays for the player (a blind both chose, the timer's move)."""
+        ...
+
+    def match_record(self, run: Run) -> MatchRecord: ...
+
+    def timeout_command(self, run: Run) -> dict[str, Any] | None:
+        """The command that moves a late player on (None at the blind select, which the match decides)."""
+        ...
+
+    def pvp_state(self, blinds: Sequence[list[dict[str, Any]]], eliminated: Sequence[bool]) -> PvPState: ...
+
+    def opponent_view(self, run: Run) -> OpponentView:
+        """The public part of a run, as the other player of a match sees it."""
+        ...
+
 
 @dataclass(frozen=True)
 class PlayerRecord:
@@ -172,6 +216,27 @@ class GameRepository(Protocol):
 
     def global_stats(self) -> GlobalStats:
         """Everyone's counted runs together."""
+        ...
+
+
+class MatchRepository(Protocol):
+    def add_match(self, match: Match) -> None: ...
+
+    def get_match(self, match_id: str) -> Match:
+        """Raises MatchNotFound."""
+        ...
+
+    def match_by_code(self, code: str) -> Match:
+        """The match in its lobby with this invite code. Raises MatchNotFound."""
+        ...
+
+    def current_match(self, player_id: str) -> Match | None:
+        """The player's latest match not finished (in its lobby, or being played)."""
+        ...
+
+    def save_match(self, match: Match, expected_version: int) -> None:
+        """Store the match (its version + 1).  Raises VersionConflict when the
+        stored match is not at ``expected_version``."""
         ...
 
 

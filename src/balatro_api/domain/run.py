@@ -25,6 +25,7 @@ GAME_SPEEDS = (0.5, 1.0, 2.0, 4.0)
 # before runs had owners)
 ANONYMOUS_PLAYER = "local"
 SEED_PATTERN = re.compile(r"^[A-Za-z0-9]{1,8}$")
+RUN_MODES = ("pvp", "coop")
 
 
 @dataclass(frozen=True)
@@ -40,8 +41,12 @@ class GameSettings:
     challenge: str | None = None
     game_speed: float = 1.0
     seeded: bool = False
+    mode: str | None = None
+    """A multiplayer mode's rules (the engine's mod: "pvp"), or None for the game's own."""
 
     def __post_init__(self) -> None:
+        if self.mode is not None and self.mode not in RUN_MODES:
+            raise InvalidGameSettings(f"the mode is one of {', '.join(RUN_MODES)}")
         if not SEED_PATTERN.match(self.seed):
             raise InvalidGameSettings("a seed is 1 to 8 letters or digits")
         if not 1 <= self.stake <= 8:
@@ -117,8 +122,8 @@ def finished(progress: Progress) -> bool:
 def counts(settings: GameSettings, debug: bool) -> bool:
     """Whether a run counts for statistics and leaderboards: as in the game,
     not when the player chose the seed or plays a challenge; nor when a debug
-    command was used."""
-    return not settings.seeded and settings.challenge is None and not debug
+    command was used, nor a multiplayer run."""
+    return not settings.seeded and settings.challenge is None and not debug and settings.mode is None
 
 
 @dataclass
@@ -143,6 +148,8 @@ class Run:
     replay: bool = False
     """Rebuilt from another run's history (a bug report, or watching a run):
     the caller plays it, but it isn't one of their runs (not listed)."""
+    match_id: str | None = None
+    """The multiplayer match the run is played in (its settings have the mode)."""
     start_profile: dict[str, Any] | None = None
     """The player's progress when the run started (what was unlocked and
     discovered, as the engine's Profile JSON): it decides the pools, so it is

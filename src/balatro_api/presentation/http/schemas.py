@@ -6,7 +6,14 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from balatro_api.application.dto import ImportedRun, NewGame, PlayerAction, PlayerSettings
+from balatro_api.application.dto import (
+    ImportedRun,
+    MatchSettingsChange,
+    NewGame,
+    NewMatch,
+    PlayerAction,
+    PlayerSettings,
+)
 
 Version = Annotated[int | None, Field(
     default=None, ge=0,
@@ -210,3 +217,52 @@ class PlayerSettingsRequest(BaseModel):
 
     def to_dto(self) -> PlayerSettings:
         return PlayerSettings(private=self.private, all_unlocked=self.all_unlocked)
+
+
+# ------------------------------------------------------------------ multiplayer
+Seed = Annotated[str | None, Field(None, pattern=r"^[A-Za-z0-9]{1,8}$",
+                                   description="1 to 8 letters or digits; none for a random seed (the same for both)")]
+Timer = Annotated[int, Field(120, json_schema_extra={"enum": [60, 120, 180, 300]},
+                             description="Seconds a player has once the other one waits for them: 60, 120, 180 or 300")]
+GameSpeed = Annotated[float, Field(1, json_schema_extra={"enum": [0.5, 1, 2, 4]},
+                                   description="The player's game speed setting (their run's)")]
+
+
+class NewMatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["pvp", "coop"] = Field("pvp", description="pvp: each player their own run, hit points")
+    deck: str = Field("b_red", description="The deck both players play")
+    stake: int = Field(1, ge=1, le=8)
+    seed: Seed = None
+    timer: Timer = 120
+    game_speed: GameSpeed = 1
+
+    def to_dto(self) -> NewMatch:
+        return NewMatch(mode=self.mode, deck=self.deck, stake=self.stake, seed=self.seed, timer=self.timer,
+                        game_speed=float(self.game_speed))
+
+
+class MatchSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    deck: str = "b_red"
+    stake: int = Field(1, ge=1, le=8)
+    seed: Seed = None
+    timer: Timer = 120
+
+    def to_dto(self) -> MatchSettingsChange:
+        return MatchSettingsChange(deck=self.deck, stake=self.stake, seed=self.seed, timer=self.timer)
+
+
+class JoinMatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(..., min_length=4, max_length=12, description="The match's invite code")
+    game_speed: GameSpeed = 1
+
+
+class VoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    choice: Literal["select", "skip"] = Field(..., description="Play the blind on deck, or skip it (both must skip)")

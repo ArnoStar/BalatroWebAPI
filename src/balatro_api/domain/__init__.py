@@ -1,22 +1,52 @@
-"""The domain: runs and their invariants.  Pure Python, no I/O, no frameworks."""
+"""The domain: runs, multiplayer matches and their invariants.  Pure Python, no I/O, no frameworks."""
 
 from .errors import DomainError, GameNotFound, GameOver, IllegalAction, InvalidGameSettings, Locked, VersionConflict
+from .match import (
+    BLIND_CHOICES,
+    MATCH_MODES,
+    TIMERS,
+    InAnotherMatch,
+    Match,
+    MatchFull,
+    MatchNotFound,
+    MatchPlayer,
+    MatchSettings,
+    MatchStarted,
+    MatchStatus,
+    NotMatchHost,
+    WaitingForOpponent,
+)
 from .run import (
-                  ANONYMOUS_PLAYER,
-                  GAME_SPEEDS,
-                  Command,
-                  GameSettings,
-                  Phase,
-                  Progress,
-                  Run,
-                  RunSummary,
-                  counts,
-                  finished,
+    ANONYMOUS_PLAYER,
+    GAME_SPEEDS,
+    RUN_MODES,
+    Command,
+    GameSettings,
+    Phase,
+    Progress,
+    Run,
+    RunSummary,
+    counts,
+    finished,
 )
 from .stats import CAREER_STATS, JokerUsage, RunStats
 
 __all__ = [
     "ANONYMOUS_PLAYER",
+    "BLIND_CHOICES",
+    "MATCH_MODES",
+    "RUN_MODES",
+    "TIMERS",
+    "InAnotherMatch",
+    "Match",
+    "MatchFull",
+    "MatchNotFound",
+    "MatchPlayer",
+    "MatchSettings",
+    "MatchStarted",
+    "MatchStatus",
+    "NotMatchHost",
+    "WaitingForOpponent",
     "CAREER_STATS",
     "GAME_SPEEDS",
     "Command",

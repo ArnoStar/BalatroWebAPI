@@ -1,4 +1,4 @@
-"""Runs kept in memory (lost when the server stops).  For tests and demos."""
+"""Runs and matches kept in memory (lost when the server stops).  For tests and demos."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 from balatro_api.application import statistics
 from balatro_api.application.dto import GlobalStats, LeaderboardName
 from balatro_api.application.ports import BoardPage, PlayerRecord
-from balatro_api.domain import GameNotFound, Run, RunSummary, VersionConflict
+from balatro_api.domain import GameNotFound, Match, MatchNotFound, MatchStatus, Run, RunSummary, VersionConflict
 
 
 class InMemoryGameRepository:
@@ -19,6 +19,7 @@ class InMemoryGameRepository:
         self._names: dict[str, str | None] = {}
         self._players: dict[str, PlayerRecord] = {}
         self._pointers: dict[str, dict[int, dict[str, Any]]] = {}
+        self._matches: dict[str, Match] = {}
         self._lock = threading.Lock()
 
     def _remember(self, run: Run) -> None:
@@ -84,7 +85,8 @@ class InMemoryGameRepository:
 
     def list(self, owner: str, limit: int, offset: int) -> list[RunSummary]:
         with self._lock:
-            runs = sorted((r for r in self._runs.values() if r.owned_by(owner) and not r.replay),
+            runs = sorted((r for r in self._runs.values()
+                           if r.owned_by(owner) and not r.replay and r.settings.mode is None),
                           key=lambda r: r.updated_at, reverse=True)
             return [r.summary() for r in runs[offset:offset + limit]]
 
@@ -105,3 +107,38 @@ class InMemoryGameRepository:
 
     def global_stats(self) -> GlobalStats:
         return statistics.global_stats(self._all())
+
+    # ------------------------------------------------------------ matches
+    def add_match(self, match: Match) -> None:
+        with self._lock:
+            self._matches[match.id] = copy.deepcopy(match)
+
+    def get_match(self, match_id: str) -> Match:
+        with self._lock:
+            match = self._matches.get(match_id)
+            if match is None:
+                raise MatchNotFound(match_id)
+            return copy.deepcopy(match)
+
+    def match_by_code(self, code: str) -> Match:
+        with self._lock:
+            for m in self._matches.values():
+                if m.code == code and m.status is MatchStatus.LOBBY:
+                    return copy.deepcopy(m)
+        raise MatchNotFound(code)
+
+    def current_match(self, player_id: str) -> Match | None:
+        with self._lock:
+            mine = [m for m in self._matches.values() if m.active and m.seat_of(player_id) is not None]
+            return copy.deepcopy(max(mine, key=lambda m: m.updated_at)) if mine else None
+
+    def save_match(self, match: Match, expected_version: int) -> None:
+        with self._lock:
+            stored = self._matches.get(match.id)
+            if stored is None:
+                raise MatchNotFound(match.id)
+            if stored.version != expected_version:
+                raise VersionConflict(expected_version, stored.version)
+            saved = copy.deepcopy(match)
+            saved.version = expected_version + 1
+            self._matches[match.id] = saved

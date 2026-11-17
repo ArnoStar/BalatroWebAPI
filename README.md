@@ -169,6 +169,46 @@ the game's `resources/textures/1x` (or `2x`) folder and its cell size. The API
 does not serve the game's textures: a front end loads them from a copy of the
 game.
 
+## Multiplayer
+
+A **match** is made by a player (its host) with `POST /matches`, joined by a
+second player with its invite `code` (`POST /matches/join`), set up by the
+host (`PUT /matches/{id}/settings`: deck, stake, seed, timer) and started with
+`POST /matches/{id}/start`. A player is in one match at a time:
+`GET /matches/current` finds it again (204: none). Another player's match is
+`404 match_not_found`.
+
+**PvP.** Each player gets a run of the same seed, deck and stake, with
+everything unlocked and the engine's PvP rules (`settings.mode: "pvp"`: a lost
+round doesn't end the run). They play their own run with the run routes; the
+match keeps them in step, and its view (`GET /matches/{id}`, read every second
+or two) shows the rest:
+
+- `pvp.hp`: both players' hit points (50 each). Once both have finished a
+  blind, each loses `floor(other's chips / own chips)`, from ante 4 on; a lost
+  round costs 10 instead, at any ante (the engine's `balatro.mods.pvp`).
+- **The blind select**: each player chooses with `POST /matches/{id}/vote`
+  (`select` or `skip`); once both have chosen (`pvp.vote.decision`), each plays
+  `select_blind` or `skip_blind`. A blind is skipped only if both skip it.
+  Before that, both actions are refused with `409 waiting_for_opponent`.
+- **The end of a round**: `cash_out` is refused (`409 waiting_for_opponent`)
+  until the other player has finished the same blind (`pvp.can_cash_out`).
+- **The timer** (`settings.timer` seconds): once a player waits for the other
+  (`pvp.waiting`, `pvp.opponent_waiting`), the late player has until
+  `pvp.deadline`. Then the match plays their run on with the game's own
+  commands (the round lost, the cash out, the pack skipped, the shop left, the
+  blind played). The match catches up when it is read or one of its runs is
+  played: nothing runs in the background. A run moved on that way has a new
+  `run_version`.
+- `pvp.opponent`: the other player's run as far as it can be seen (no hand, no
+  deck); `pvp.rounds`: every blind both finished and what it cost.
+- The match is over (`result`) when a player has no hit points left, a run
+  ends for good, or a player leaves (`POST /matches/{id}/leave`).
+
+Match runs aren't listed with the player's runs and don't count for
+statistics. Without sign-in (development), a caller may name itself with the
+token `dev:<name>` to try a match alone with two tabs.
+
 ## Settings
 
 | Variable | Default | |

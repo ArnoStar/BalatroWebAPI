@@ -30,6 +30,7 @@ from balatro_api.application.dto import (
     HandPanelEvent,
     HandScore,
     HandScoredEvent,
+    OpponentView,
     PackView,
     PokerHandView,
     RoundEvalRow,
@@ -43,6 +44,7 @@ from balatro_api.application.dto import (
     Stickers,
     TagView,
 )
+from balatro_api.application.statistics import score
 from balatro_api.domain import CAREER_STATS, JokerUsage, Phase, Progress, Run, RunStats
 
 from .commands import legal_actions
@@ -277,7 +279,7 @@ def game_view(run: Run, G: Game) -> GameView:
         id=run.id,
         version=run.version,
         settings=SettingsView(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
-                              seeded=s.seeded),
+                              seeded=s.seeded, mode=s.mode),
         phase=phase(G),
         state=STATE_NAMES.get(G.STATE, str(G.STATE)),
         won=bool(GAME.won),
@@ -308,6 +310,20 @@ def game_view(run: Run, G: Game) -> GameView:
         info=info_view(G),
         actions=legal_actions(G),
     )
+
+
+def opponent_view(run: Run, G: Game) -> OpponentView:
+    """The public part of a match player's run (what the other player sees: no hand, no deck)."""
+    GAME = G.GAME
+    cr = GAME.current_round
+    return OpponentView(
+        version=run.version, phase=phase(G), state=STATE_NAMES.get(G.STATE, str(G.STATE)),
+        ante=GAME.round_resets.ante, round=GAME.round, dollars=GAME.dollars, hands_left=cr.hands_left,
+        discards_left=cr.discards_left, hand_size=G.hand.config.card_limit, joker_slots=G.jokers.config.card_limit,
+        round_score=score(float(GAME.chips or 0)), blind=blind_view(G), jokers=cards_view(G, G.jokers),
+        consumables=len(G.consumeables.cards), deck_size=len(G.playing_cards),
+        vouchers=[k for k, v in GAME.used_vouchers.items() if v],
+        poker_hands=[h for h in poker_hands_view(G) if h.level > 1 or h.played > 0], won=bool(GAME.won))
 
 
 # ------------------------------------------------------------------ feedback

@@ -221,3 +221,40 @@ def test_pointers(repo):
     assert repo.pointers("r1") == {0: trace, 3: {"v": 1, "e": [[5, "d", 0, 0, 0]]}}
     repo.delete("r1")
     assert repo.pointers("r1") == {}
+
+
+# ------------------------------------------------------------------ matches
+def test_matches(repo):
+    from balatro_api.domain import Match, MatchNotFound, MatchPlayer, MatchSettings, MatchStatus
+
+    m = Match(id="m1", code="ABCDEF", mode="pvp", host="p1", created_at=T0, updated_at=T0,
+              settings=MatchSettings(deck="b_blue", stake=2, timer=60), players=[MatchPlayer(id="p1", name="Ann")])
+    repo.add_match(m)
+    assert repo.match_by_code("ABCDEF").id == "m1"
+    assert repo.current_match("p1").id == "m1" and repo.current_match("p2") is None
+    m.join(MatchPlayer(id="p2", name="Bob", game_speed=2), T0)
+    m.start("SEED", ["r1", "r2"], T0 + timedelta(seconds=1))
+    m.vote(0, 0, "skip", T0 + timedelta(seconds=2))
+    m.set_wait(0, "vote:0", T0 + timedelta(seconds=2))
+    repo.save_match(m, expected_version=0)
+    with pytest.raises(VersionConflict):
+        repo.save_match(m, expected_version=0)
+    got = repo.get_match("m1")
+    m.version = 1
+    assert got == m and got.status is MatchStatus.PLAYING and got.players[1].run_id == "r2"
+    assert repo.current_match("p2").id == "m1"
+    with pytest.raises(MatchNotFound):
+        repo.match_by_code("ABCDEF")  # (no longer in its lobby)
+    got.finish(0, "hp", T0 + timedelta(seconds=3))
+    repo.save_match(got, expected_version=1)
+    assert repo.current_match("p1") is None
+    with pytest.raises(MatchNotFound):
+        repo.get_match("nope")
+
+
+def test_match_runs_are_not_listed(repo):
+    repo.add(make("solo"))
+    repo.add(make("pvp", settings=GameSettings(seed="ABC", seeded=True, mode="pvp"), match_id="m1"))
+    assert [r.id for r in repo.list("p1", 10, 0)] == ["solo"]
+    got = repo.get("pvp")
+    assert got.match_id == "m1" and got.settings.mode == "pvp" and not got.summary().counts
