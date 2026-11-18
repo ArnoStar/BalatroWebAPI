@@ -24,6 +24,7 @@ from balatro_api.domain import Command, GameNotFound, GameSettings, IllegalActio
 from .dto import (
     ActionResult,
     Catalog,
+    CoopDecksView,
     CoopStep,
     GameSummaryView,
     GameView,
@@ -53,19 +54,27 @@ from .matches import (
     CreateMatch,
     CurrentMatch,
     GetMatch,
+    GetMatchHistory,
+    GetMultiplayerStats,
     GetSteps,
     JoinMatch,
+    KickPlayer,
     LeaveMatch,
     Matches,
+    Rematch,
+    SendEmote,
     SetSelection,
     StartMatch,
     VoteBlind,
+    multiplayer_stats,
 )
 from .permissions import Permission, allowed
 from .ports import Authenticator, BoardRow, Clock, GameEngine, GameRepository, IdGenerator, Outcome
 from .statistics import player_stats, score
 
 log = logging.getLogger(__name__)
+
+PROFILE_MATCHES = 10  # the latest matches a profile shows
 
 
 def action_dict(a: PlayerAction) -> dict[str, Any]:
@@ -118,12 +127,17 @@ def is_private(games: GameRepository, player_id: str) -> bool:
     return record is not None and record.private
 
 
-def viewable_run(games: GameRepository, player: Player, game_id: str) -> Run:
+def viewable_run(games: GameRepository, player: Player, game_id: str, matches: Matches | None = None) -> Run:
     """A run the player may watch: their own, or a finished run of a player whose profile is
-    public (developers and admins: any run). Any other run is "not found"."""
+    public (developers and admins: any run). Once a match is over, its players may watch its runs
+    (each other's, played on the same seed). Any other run is "not found"."""
     run = games.get(game_id)
     if run.owned_by(player.id) or allowed(player, Permission.WATCH_ALL):
         return run
+    if run.match_id is not None and matches is not None:
+        match = matches.matches.get_match(run.match_id)
+        if match.played and match.seat_of(player.id) is not None:
+            return run
     if run.finished and not run.replay and not is_private(games, run.owner):
         return run
     raise GameNotFound(game_id)
@@ -276,11 +290,11 @@ class PreviewHand:
 
 
 class GetHistory:
-    def __init__(self, games: GameRepository) -> None:
-        self.games = games
+    def __init__(self, games: GameRepository, matches: Matches | None = None) -> None:
+        self.games, self.matches = games, matches
 
     def __call__(self, player: Player, game_id: str) -> HistoryView:
-        run = viewable_run(self.games, player, game_id)
+        run = viewable_run(self.games, player, game_id, self.matches)
         return HistoryView(id=run.id, version=run.version, engine_version=run.engine_version,
                            settings=settings_view(run.settings), commands=[c.as_dict() for c in run.commands],
                            start_profile=run.start_profile)
@@ -290,11 +304,13 @@ class WatchGame:
     """Watch a run again: a copy of it at its start (the caller's, not listed and not counted)
     and its actions, to play on the copy with their animations."""
 
-    def __init__(self, engine: GameEngine, games: GameRepository, ids: IdGenerator, clock: Clock) -> None:
+    def __init__(self, engine: GameEngine, games: GameRepository, ids: IdGenerator, clock: Clock,
+                 matches: Matches | None = None) -> None:
         self.engine, self.games, self.ids, self.clock = engine, games, ids, clock
+        self.matches = matches
 
     def __call__(self, player: Player, game_id: str) -> WatchView:
-        source = viewable_run(self.games, player, game_id)
+        source = viewable_run(self.games, player, game_id, self.matches)
         steps = self.engine.replay_steps(source)
         pointers = self.games.pointers(source.id)
         copy_id = self.ids.new_id()
@@ -469,10 +485,11 @@ class UpdateMe:
 
 class GetPlayerProfile:
     """A player's profile: stats, collection and recent runs (others see only finished runs;
-    a private profile shows only the name)."""
+    a private profile shows only the name), and their multiplayer matches."""
 
-    def __init__(self, engine: GameEngine, games: GameRepository, clock: Clock) -> None:
-        self.engine, self.games, self.clock = engine, games, clock
+    def __init__(self, engine: GameEngine, games: GameRepository, clock: Clock,
+                 matches: Matches | None = None) -> None:
+        self.engine, self.games, self.clock, self.matches = engine, games, clock, matches
 
     def __call__(self, player: Player, player_id: str, limit: int = 20) -> PlayerProfileView:
         record = self.games.player(player_id)
@@ -485,10 +502,29 @@ class GetPlayerProfile:
         if private and not (you or allowed(player, Permission.WATCH_ALL)):
             return PlayerProfileView(id=player_id, name=name, you=you, private=True)
         recent = [r for r in self.games.list(player_id, 200, 0) if you or r.finished][:limit]
+        multiplayer, history = None, []
+        if self.matches is not None:
+            played = self.matches.matches.finished_matches(player_id)
+            if played:
+                multiplayer = multiplayer_stats(played, player_id)
+                history = [self.matches.history_entry(m, player_id) for m in played[:PROFILE_MATCHES]]
         return PlayerProfileView(
             id=player_id, name=name, you=you, private=private, stats=player_stats(runs, self.clock.now()),
             collection=self.engine.collection(self.engine.player_progress(runs)),
-            runs=[summary_view(r) for r in recent])
+            runs=[summary_view(r) for r in recent], multiplayer=multiplayer, matches=history)
+
+
+class GetCoopDecks:
+    """A coop run's two decks (each player's cards, and those still to draw), for the players' deck views."""
+
+    def __init__(self, engine: GameEngine, games: GameRepository, matches: Matches) -> None:
+        self.engine, self.games, self.matches = engine, games, matches
+
+    def __call__(self, player: Player, game_id: str) -> CoopDecksView:
+        run, seat = member_run(self.games, self.matches, player, game_id)
+        if seat is None and run.settings.mode != "coop":
+            raise IllegalAction("not a coop run")
+        return self.engine.coop_decks(run)
 
 
 class GetGlobalStats:
@@ -533,6 +569,12 @@ class UseCases:
     leave_match: LeaveMatch
     set_selection: SetSelection
     coop_steps: GetSteps
+    coop_decks: GetCoopDecks
+    rematch: Rematch
+    kick_player: KickPlayer
+    send_emote: SendEmote
+    match_history: GetMatchHistory
+    multiplayer_stats: GetMultiplayerStats
 
 
 __all__ = ["Authenticate", "CreateGame", "DeleteGame", "GetCatalog", "GetGame", "GetGameSummary", "GetGlobalStats",

@@ -29,6 +29,8 @@ from balatro.rng import SEED_ALPHABET, normalize_seed
 from balatro_api.application.dto import (
     Catalog,
     CollectionView,
+    CoopDecksView,
+    CoopDeckView,
     GameView,
     HandPreview,
     LegalAction,
@@ -322,6 +324,16 @@ class BalatroEngine:
     def opponent_view(self, run: Run) -> OpponentView:
         with self._game(run) as G:
             return presenter.opponent_view(run, G)
+
+    def coop_decks(self, run: Run) -> CoopDecksView:
+        with self._game(run) as G:
+            coop = G.mod("coop")
+            if not isinstance(coop, Coop):
+                return CoopDecksView(seats=[])
+            return CoopDecksView(seats=[
+                CoopDeckView(seat=i, full_deck=presenter.deck_cards(coop.seat_cards(i)),
+                             remaining=presenter.deck_cards(seat.deck.cards))
+                for i, seat in enumerate(coop.seats)])
 
     def commit(self, run: Run, outcome: Outcome) -> None:
         if not isinstance(outcome.state, Game):

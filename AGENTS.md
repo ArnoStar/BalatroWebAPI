@@ -34,11 +34,14 @@ which reproduces the original game exactly.
    The deck view has no card ids, because they would let a client track a card
    that is later drawn face down.
 6. **A run is its owner's.** Every use case takes the `Player` first and loads
-   runs through `owned_run` to play them. Another player's run is
-   `GameNotFound` (404), never 403: don't reveal that it exists. Watching
-   (history, `watch`) goes through `viewable_run`: one's own runs, and others'
-   *finished* runs unless their owner's profile is private (developers: any).
-   A live run's history would show what is coming. Players come from the
+   runs through `owned_run` to play them (`member_run`: a coop run is also
+   played by the other player of its match, for their seat). Another
+   player's run is `GameNotFound` (404), never 403: don't reveal that it
+   exists. Watching (history, `watch`) goes through `viewable_run`: one's own
+   runs, others' *finished* runs unless their owner's profile is private
+   (developers: any), and the runs of a match that is over for its players
+   (played on the same seed). A live run's history would show what is
+   coming. Players come from the
    identity service's access tokens (`Authenticator` port). Never trust a
    player id the client sends any other way.
 7. **A cached game is touched by one thread at a time.** Inside the engine

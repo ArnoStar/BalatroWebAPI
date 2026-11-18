@@ -5,18 +5,26 @@ match keeps them in step. Read the match every second or two while playing:
 it shows the other player, the hit points, what each one waits for and the
 timer's deadline (and it is when the match catches up with the timer). A
 player of another match gets ``404 match_not_found``.
+
+Coop: both players play the host's run, in turns; the match has the turn,
+the selection of the player whose turn it is, and the run's last actions to
+watch. Once a match is over: its summary, a rematch, the players' history and
+statistics. During it: emotes.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
-from balatro_api.application.dto import CoopStepsView, MatchView
+from balatro_api.application.dto import CoopStepsView, MatchHistoryView, MatchView, MultiplayerStats
 from balatro_api.presentation.http.deps import CurrentPlayer, Uses
 from balatro_api.presentation.http.schemas import (
+    EmoteRequest,
     JoinMatchRequest,
+    KickRequest,
     MatchSettingsRequest,
     NewMatchRequest,
     SelectionRequest,
@@ -45,6 +53,21 @@ def join_match(body: JoinMatchRequest, player: CurrentPlayer, uses: Uses) -> Mat
 def current_match(player: CurrentPlayer, uses: Uses) -> MatchView | Response:
     match = uses.current_match(player)
     return match if match is not None else Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/history", response_model=MatchHistoryView, summary="The caller's finished matches")
+def match_history(player: CurrentPlayer, uses: Uses, limit: Annotated[int, Query(ge=1, le=50)] = 20,
+                  before: Annotated[datetime | None, Query(description="for the next page: next_before")] = None,
+                  ) -> MatchHistoryView:
+    """The latest first, with how each went (``summary``) and its runs, to watch them again."""
+    return uses.match_history(player, limit, before)
+
+
+@router.get("/stats", response_model=MultiplayerStats, summary="The caller's PvP and coop statistics")
+def multiplayer_stats(player: CurrentPlayer, uses: Uses) -> MultiplayerStats:
+    """From their finished matches: PvP wins, losses, streaks and damage; coop runs, antes and chips; the
+    players they played most with."""
+    return uses.multiplayer_stats(player)
 
 
 @router.get("/{match_id}", response_model=MatchView, summary="The match as the player sees it")
@@ -89,3 +112,23 @@ def coop_steps(match_id: str, player: CurrentPlayer, uses: Uses, since: Annotate
     """Each action with what the game showed (its ``events``), to play the other player's actions again on your
     screen. ``complete`` false: they aren't all kept any more: load the run."""
     return uses.coop_steps(player, match_id, since)
+
+
+@router.post("/{match_id}/rematch", response_model=MatchView, summary="Play again (after a match)")
+def rematch(match_id: str, player: CurrentPlayer, uses: Uses) -> MatchView:
+    """The first player to ask makes a new lobby with the same mode and settings (and is its host); the other
+    one, asking too, joins it. The finished match's view shows it (``rematch``)."""
+    return uses.rematch(player, match_id)
+
+
+@router.post("/{match_id}/kick", response_model=MatchView, summary="Send a player away from the lobby (the host)")
+def kick(match_id: str, body: KickRequest, player: CurrentPlayer, uses: Uses) -> MatchView:
+    """They can't join this lobby again (``404 match_not_found``)."""
+    return uses.kick_player(player, match_id, body.seat)
+
+
+@router.post("/{match_id}/emote", status_code=status.HTTP_204_NO_CONTENT, summary="A quick message to the other player")
+def emote(match_id: str, body: EmoteRequest, player: CurrentPlayer, uses: Uses) -> Response:
+    """In the match's view (``emotes``) for a few seconds; one a second per player (more are dropped)."""
+    uses.send_emote(player, match_id, body.emote)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

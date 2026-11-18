@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import copy
 import threading
+from datetime import datetime
 from typing import Any
 
 from balatro_api.application import statistics
@@ -142,3 +143,11 @@ class InMemoryGameRepository:
             saved = copy.deepcopy(match)
             saved.version = expected_version + 1
             self._matches[match.id] = saved
+
+    def finished_matches(self, player_id: str, limit: int | None = None,
+                         before: datetime | None = None) -> builtins.list[Match]:
+        with self._lock:
+            mine = [m for m in self._matches.values()
+                    if m.played and m.seat_of(player_id) is not None and (before is None or m.updated_at < before)]
+            mine.sort(key=lambda m: m.updated_at, reverse=True)
+            return [copy.deepcopy(m) for m in mine[:limit]]

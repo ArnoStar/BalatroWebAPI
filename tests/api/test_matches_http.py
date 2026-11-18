@@ -265,3 +265,113 @@ def test_coop_shop_is_left_together(app):
     assert "end_shop" not in [x["type"] for x in g["actions"]]
     g = act(app, "bob", run, type="end_shop")["game"]
     assert g["phase"] == "blind_select" and g["coop"]["turn"] == 0  # (no hand was played: still ann's turn)
+
+
+# ------------------------------------------------------------------ after a match
+def test_a_finished_match_has_its_summary_history_and_stats(app):
+    a, b = started(app)
+    vote(app, "ann", a["id"], "select")
+    vote(app, "bob", a["id"], "select")
+    act(app, "ann", a["run_id"], type="select_blind")
+    act(app, "bob", b["run_id"], type="select_blind")
+    call(app, "ann", "POST", f"/games/{a['run_id']}/debug", command={"cmd": "cheat", "win": True})
+    lose_round(app, "bob", b["run_id"])
+    call(app, "bob", "POST", f"/matches/{a['id']}/leave", 204)
+    m = call(app, "ann", "GET", f"/matches/{a['id']}")
+    s = m["summary"]
+    assert s["ante"] == 1 and s["rounds"] == 1
+    ann, bob = s["players"]
+    assert ann["hp"] == 50 and bob["hp"] == 40 and bob["damage_taken"] == 10 and bob["rounds_lost"] == 1
+    assert ann["damage_dealt"] == 0  # (a lost round's 10 hit points aren't the other player's doing)
+    h = call(app, "ann", "GET", "/matches/history")
+    assert [x["id"] for x in h["matches"]] == [a["id"]] and h["next_before"] is None
+    entry = h["matches"][0]
+    assert entry["result"]["you_won"] and entry["runs"] == [a["run_id"], b["run_id"]] and entry["summary"] == s
+    st = call(app, "ann", "GET", "/matches/stats")
+    assert st["pvp"]["played"] == 1 and st["pvp"]["won"] == 1 and st["pvp"]["opponent_left"] == 1
+    assert st["pvp"]["streak"] == 1 and st["rivals"] == [{"name": "bob", "played": 1, "won": 1, "lost": 0,
+                                                          "best_ante": 0}]
+    assert call(app, "bob", "GET", "/matches/stats")["pvp"]["gave_up"] == 1
+    assert call(app, "cy", "GET", "/matches/history")["matches"] == []
+    # a profile shows them
+    profile = call(app, "cy", "GET", "/players/local:ann")
+    assert profile["multiplayer"]["pvp"]["won"] == 1 and profile["matches"][0]["id"] == a["id"]
+    # a closed lobby isn't a match played
+    lobby = call(app, "ann", "POST", "/matches", 201, mode="pvp")
+    call(app, "ann", "POST", f"/matches/{lobby['id']}/leave", 204)
+    assert len(call(app, "ann", "GET", "/matches/history")["matches"]) == 1
+
+
+def test_the_players_watch_each_others_runs_once_the_match_is_over(app):
+    a, b = started(app)
+    call(app, "ann", "GET", f"/games/{b['run_id']}/history", 404)  # (the match is being played)
+    call(app, "bob", "POST", f"/matches/{a['id']}/leave", 204)
+    assert call(app, "ann", "GET", f"/games/{b['run_id']}/history")["id"] == b["run_id"]
+    assert call(app, "ann", "POST", f"/games/{b['run_id']}/watch", 201)["source"] == b["run_id"]
+    call(app, "cy", "GET", f"/games/{b['run_id']}/history", 404)  # (others: finished runs only)
+
+
+def test_rematch(app):
+    a, _ = started(app)
+    call(app, "ann", "POST", f"/matches/{a['id']}/rematch", 409)  # not over
+    call(app, "bob", "POST", f"/matches/{a['id']}/leave", 204)
+    nxt = call(app, "bob", "POST", f"/matches/{a['id']}/rematch")
+    assert nxt["status"] == "lobby" and nxt["host"] and nxt["mode"] == "pvp"
+    assert nxt["settings"] == {"deck": "b_red", "stake": 1, "seed": "TESTSEED", "timer": 120}
+    old = call(app, "ann", "GET", f"/matches/{a['id']}")
+    assert old["rematch"] == {"match_id": nxt["id"], "code": nxt["code"], "by_you": False, "open": True}
+    joined = call(app, "ann", "POST", f"/matches/{a['id']}/rematch")
+    assert joined["id"] == nxt["id"] and joined["seat"] == 1 and len(joined["players"]) == 2
+    assert call(app, "bob", "POST", f"/matches/{a['id']}/rematch")["id"] == nxt["id"]  # (asking again: the same)
+    call(app, "cy", "POST", f"/matches/{a['id']}/rematch", 404)
+
+
+def test_the_host_kicks_a_player_from_the_lobby(app):
+    m = call(app, "ann", "POST", "/matches", 201, mode="coop")
+    call(app, "bob", "POST", "/matches/join", code=m["code"])
+    call(app, "bob", "POST", f"/matches/{m['id']}/kick", 403, seat=0)  # not the host
+    call(app, "ann", "POST", f"/matches/{m['id']}/kick", 409, seat=0)  # (themselves)
+    kicked = call(app, "ann", "POST", f"/matches/{m['id']}/kick", seat=1)
+    assert [p["name"] for p in kicked["players"]] == ["ann"]
+    call(app, "bob", "GET", f"/matches/{m['id']}", 404)
+    call(app, "bob", "POST", "/matches/join", 404, code=m["code"])  # (not again)
+    call(app, "cy", "POST", "/matches/join", code=m["code"])
+
+
+def test_emotes(app, clock):
+    a, _ = started(app)
+    call(app, "ann", "POST", f"/matches/{a['id']}/emote", 204, emote="good_luck")
+    call(app, "ann", "POST", f"/matches/{a['id']}/emote", 204, emote="wow")  # (too soon: dropped)
+    call(app, "ann", "POST", f"/matches/{a['id']}/emote", 422, emote="rude")
+    call(app, "cy", "POST", f"/matches/{a['id']}/emote", 404, emote="gg")
+    e = call(app, "bob", "GET", f"/matches/{a['id']}")["emotes"]
+    assert [(x["seq"], x["seat"], x["emote"]) for x in e] == [(1, 0, "good_luck")]
+    clock.t += timedelta(seconds=2)
+    call(app, "bob", "POST", f"/matches/{a['id']}/emote", 204, emote="thanks")
+    assert [x["emote"] for x in call(app, "ann", "GET", f"/matches/{a['id']}")["emotes"]] == ["good_luck", "thanks"]
+    clock.t += timedelta(seconds=30)
+    assert call(app, "ann", "GET", f"/matches/{a['id']}")["emotes"] == []
+
+
+def test_coop_decks_and_summary(app):
+    a, _ = coop_started(app)
+    run = a["run_id"]
+    decks = call(app, "bob", "GET", f"/games/{run}/coop/decks")["seats"]
+    assert [len(d["full_deck"]) for d in decks] == [52, 52] and [len(d["remaining"]) for d in decks] == [52, 52]
+    call(app, "cy", "GET", f"/games/{run}/coop/decks", 404)
+    act(app, "ann", run, type="select_blind")
+    g = call(app, "ann", "GET", f"/games/{run}")
+    act(app, "ann", run, type="discard", cards=[g["hand"][0]["id"]])
+    g = call(app, "ann", "GET", f"/games/{run}")
+    act(app, "ann", run, type="play", cards=[c["id"] for c in g["hand"][:5]])
+    decks = call(app, "ann", "GET", f"/games/{run}/coop/decks")["seats"]
+    assert len(decks[0]["remaining"]) == 52 - 8 - 1 - 5 and len(decks[1]["remaining"]) == 44
+    assert "id" not in decks[0]["full_deck"][0]
+    call(app, "bob", "POST", f"/matches/{a['id']}/leave", 204)
+    s = call(app, "ann", "GET", f"/matches/{a['id']}")["summary"]
+    assert s["ante"] == 1 and s["run_won"] is False
+    ann, bob = s["players"]
+    assert ann["hands"] == 1 and ann["discards"] == 1 and ann["chips"] == ann["best_hand"] > 0
+    assert ann["best_hand_name"] and bob["hands"] == 0
+    st = call(app, "bob", "GET", "/matches/stats")
+    assert st["coop"]["played"] == 1 and st["partners"][0]["name"] == "ann" and st["pvp"]["played"] == 0

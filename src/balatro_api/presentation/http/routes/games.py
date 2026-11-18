@@ -10,6 +10,7 @@ from fastapi import APIRouter, Body, Query, Response, status
 
 from balatro_api.application.dto import (
     ActionResult,
+    CoopDecksView,
     GameSummaryView,
     GameView,
     HandPreview,
@@ -108,6 +109,13 @@ def history(game_id: str, player: CurrentPlayer, uses: Uses) -> HistoryView:
     engine's format. Replaying them gives the same run (for bug reports and
     for checking a run against the original game with BalatroEngine's oracle)."""
     return uses.history(player, game_id)
+
+
+@router.get("/{game_id}/coop/decks", response_model=CoopDecksView, summary="A coop run's two decks")
+def coop_decks(game_id: str, player: CurrentPlayer, uses: Uses) -> CoopDecksView:
+    """Each player's whole deck and the cards still in it, by suit and rank (never in their order), for the
+    deck view. Only for the players of the run's match."""
+    return uses.coop_decks(player, game_id)
 
 
 @router.post("/{game_id}/debug", response_model=ActionResult, summary="Test helper (when enabled)")
