@@ -466,6 +466,9 @@ class GetMe:
 
     def __call__(self, player: Player) -> MeView:
         record = self.games.player(player.id)
+        if record is not None and player.name and record.name != player.name:
+            # (the name others see is the account's: it heals a name a coop partner's actions wrote over it)
+            record = self.games.set_player(player.id, player.name)
         can = can_unlock_all(player, self.debug_enabled)
         profile = self.engine.player_progress(self.games.runs_of(player.id))
         return MeView(id=player.id, name=player.name or (record.name if record else None),

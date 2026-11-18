@@ -372,6 +372,10 @@ def test_coop_decks_and_summary(app):
     assert "id" not in decks[0]["full_deck"][0]
     act(app, "bob", run, type="sort", mode="suit")  # (the partner's action keeps the owner's name)
     assert call(app, "cy", "GET", "/players/local:ann")["name"] == "ann"
+    games = app.app.state.use_cases.player_profile.games
+    games.set_player("local:ann", "bob")  # (a name written over before the fix) heals when ann's game loads
+    assert call(app, "ann", "GET", "/players/me")["name"] == "ann"
+    assert call(app, "cy", "GET", "/players/local:ann")["name"] == "ann"
     call(app, "bob", "POST", f"/matches/{a['id']}/leave", 204)
     s = call(app, "ann", "GET", f"/matches/{a['id']}")["summary"]
     assert s["ante"] == 1 and s["run_won"] is False
