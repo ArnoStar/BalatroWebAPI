@@ -280,6 +280,12 @@ class SettingsView:
 class CoopSeatView:
     deck: int  # cards left in their deck
     hand: int  # cards in their hand (the turn's is ``hand``)
+    # the player's numbers this run: hands played, the chips they scored, their best hand, discards
+    hands: int = 0
+    chips: Score = 0
+    best_hand: Score = 0
+    best_hand_name: str | None = None
+    discards: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)

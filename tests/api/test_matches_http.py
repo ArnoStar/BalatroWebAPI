@@ -366,6 +366,9 @@ def test_coop_decks_and_summary(app):
     act(app, "ann", run, type="play", cards=[c["id"] for c in g["hand"][:5]])
     decks = call(app, "ann", "GET", f"/games/{run}/coop/decks")["seats"]
     assert len(decks[0]["remaining"]) == 52 - 8 - 1 - 5 and len(decks[1]["remaining"]) == 44
+    seats = call(app, "bob", "GET", f"/games/{run}")["coop"]["seats"]
+    assert seats[0]["hands"] == 1 and seats[0]["discards"] == 1 and seats[0]["best_hand_name"]
+    assert seats[1]["hands"] == 0
     assert "id" not in decks[0]["full_deck"][0]
     call(app, "bob", "POST", f"/matches/{a['id']}/leave", 204)
     s = call(app, "ann", "GET", f"/matches/{a['id']}")["summary"]
