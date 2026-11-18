@@ -252,6 +252,36 @@ def test_matches(repo):
         repo.get_match("nope")
 
 
+def test_finished_matches(repo):
+    from balatro_api.domain import Match, MatchPlayer
+
+    def played(i: int, result: str = "hp", status_players: tuple[str, ...] = ("p1", "p2")) -> Match:
+        at = T0 + timedelta(minutes=i)
+        m = Match(id=f"f{i}", code=f"CODE{i:02d}", mode="pvp", host="p1", created_at=at, updated_at=at,
+                  players=[MatchPlayer(id=p, name=p) for p in status_players])
+        repo.add_match(m)
+        if result != "closed":
+            m.start("SEED", ["r1", "r2"], at)
+        m.finish(0, result, at)
+        m.summary = {"ante": i, "rounds": 1, "players": []}
+        m.rematch_id, m.kicked = "next", ["p9"]
+        repo.save_match(m, expected_version=0)
+        return m
+
+    for i in range(3):
+        played(i)
+    played(3, "closed", ("p1",))
+    lobby = Match(id="lobby", code="LOBBY1", mode="coop", host="p1", created_at=T0, updated_at=T0,
+                  players=[MatchPlayer(id="p1")])
+    repo.add_match(lobby)
+    assert [m.id for m in repo.finished_matches("p1")] == ["f2", "f1", "f0"]  # (not the closed one, nor the lobby)
+    assert [m.id for m in repo.finished_matches("p2", limit=2)] == ["f2", "f1"]
+    assert [m.id for m in repo.finished_matches("p1", before=T0 + timedelta(minutes=2))] == ["f1", "f0"]
+    assert repo.finished_matches("p3") == []
+    got = repo.finished_matches("p1")[0]
+    assert got.summary == {"ante": 2, "rounds": 1, "players": []} and got.rematch_id == "next" and got.kicked == ["p9"]
+
+
 def test_match_runs_are_not_listed(repo):
     repo.add(make("solo"))
     repo.add(make("pvp", settings=GameSettings(seed="ABC", seeded=True, mode="pvp"), match_id="m1"))

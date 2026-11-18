@@ -227,6 +227,27 @@ caller's seat (`GameView.coop.seat`), and the legal actions are theirs:
   the run again). Both are kept in memory: one API process.
 - The match is over when the run ends or a player leaves.
 
+**Around a match.** The host can send a player away from the lobby
+(`POST /matches/{id}/kick`: they can't join it again). During a match, the
+players send each other emotes (`POST /matches/{id}/emote`: `gg`, `nice`,
+`wow`, `oops`, `hurry`, `thanks`, `good_luck`, `well_played`), in the match
+view's `emotes` for a few seconds. When it ends, the match keeps how it went
+(`summary`: the ante, and for each player their hit points, damage dealt and
+taken, biggest hit and rounds won in PvP; their hands, chips, best hand and
+discards in coop). Then:
+
+- `POST /matches/{id}/rematch`: the first player to ask makes a new lobby
+  with the same mode and settings; the other one, asking too, joins it (the
+  finished match's view shows it: `rematch`).
+- `GET /matches/history` (paged with `before`): the caller's finished
+  matches with their summaries and runs; its players may watch each other's
+  runs (`/games/{id}/watch`).
+- `GET /matches/stats`: PvP wins, losses, streaks and damage, coop runs,
+  antes and chips, and the players they played most with. A public profile
+  (`GET /players/{id}`) has them too, with the latest matches.
+- `GET /games/{id}/coop/decks`: a coop run's two decks (each player's cards
+  and those still to draw), for the deck view.
+
 Match runs aren't listed with the player's runs and don't count for
 statistics. Without sign-in (development), a caller may name itself with the
 token `dev:<name>` to try a match alone with two tabs.

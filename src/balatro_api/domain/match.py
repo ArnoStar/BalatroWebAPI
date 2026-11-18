@@ -9,7 +9,11 @@ by their owners; the match keeps only what isn't in them:
   and it is skipped only when both skip it (``decision``);
 - since when a player has been waiting for the other one (``waits``): when it
   is longer than the timer, the late player is moved on;
-- how it ended (``winner``, ``result``).
+- how it ended (``winner``, ``result``), and a summary of how it went
+  (``summary``: a cache, written when it ends, for the players' history and
+  statistics);
+- the match its players asked to play next (``rematch_id``), and who the
+  host sent away from the lobby (``kicked``: they can't join it again).
 
 Hit points come from the two runs (each run records the blinds it finished):
 they are derived, like a run's progress, never stored.
@@ -31,6 +35,8 @@ MAX_PLAYERS = 2
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # (no 0/O, 1/I: codes are read aloud)
 CODE_LENGTH = 6
 BLIND_CHOICES = ("select", "skip")
+# quick messages players send each other during a match (the game shows them in its own words)
+EMOTES = ("gg", "nice", "wow", "oops", "hurry", "thanks", "good_luck", "well_played")
 
 
 class MatchNotFound(DomainError):
@@ -146,6 +152,9 @@ class Match:
     winner: int | None = None  # the winner's seat (None: a draw, or not over)
     result: str | None = None  # how it ended: "hp", "left", "game_over"
     finished_at: datetime | None = None
+    summary: dict[str, Any] | None = None  # how it went (see Matches.summarize): a cache, written when it ends
+    rematch_id: str | None = None  # the match its players asked to play next
+    kicked: list[str] = field(default_factory=list)  # players the host sent away from the lobby
     version: int = 0  # the number of times it was saved (optimistic saves)
 
     def __post_init__(self) -> None:
@@ -173,6 +182,8 @@ class Match:
             self.players[seat] = replace(self.players[seat], name=player.name or self.players[seat].name,
                                          game_speed=player.game_speed)
             return seat
+        if player.id in self.kicked:
+            raise MatchNotFound(self.code)  # (sent away: the lobby is as good as gone for them)
         if self.status is not MatchStatus.LOBBY:
             raise MatchStarted()
         if len(self.players) >= MAX_PLAYERS:
@@ -195,6 +206,22 @@ class Match:
             self.players[seat].left = True
             others = [i for i, p in enumerate(self.players) if not p.left]
             self.finish(others[0] if len(others) == 1 else None, "left", at)
+
+    def kick(self, host_id: str, seat: int, at: datetime) -> None:
+        """The host sends a player away from the lobby (they can't join it again)."""
+        self.check_host(host_id)
+        if self.status is not MatchStatus.LOBBY:
+            raise MatchStarted("a match being played can't send a player away")
+        if not 0 <= seat < len(self.players) or self.players[seat].id == host_id:
+            raise IllegalAction("no other player in that seat")
+        self.kicked.append(self.players[seat].id)
+        del self.players[seat]
+        self.updated_at = at
+
+    @property
+    def played(self) -> bool:
+        """It was played (not a lobby closed before it started)."""
+        return self.status is MatchStatus.FINISHED and self.result != "closed"
 
     def check_host(self, player_id: str) -> None:
         if player_id != self.host:
@@ -277,6 +304,7 @@ class Match:
             "waits": {str(seat): {"point": w.point, "since": w.since.isoformat()} for seat, w in self.waits.items()},
             "winner": self.winner, "result": self.result,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "summary": self.summary, "rematch_id": self.rematch_id, "kicked": list(self.kicked),
         }
 
     @classmethod
@@ -296,4 +324,5 @@ class Match:
                    for seat, w in (doc.get("waits") or {}).items()},
             winner=doc.get("winner"), result=doc.get("result"),
             finished_at=datetime.fromisoformat(doc["finished_at"]) if doc.get("finished_at") else None,
+            summary=doc.get("summary"), rematch_id=doc.get("rematch_id"), kicked=list(doc.get("kicked") or []),
             version=version)

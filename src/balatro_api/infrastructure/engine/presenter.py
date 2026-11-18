@@ -286,7 +286,15 @@ def coop_view(G: Game, seat: int | None) -> CoopView | None:
     st = m.state()
     return CoopView(seat=seat, turn=st["turn"], your_turn=seat == st["turn"], joker_slots=st["limits"],
                     shop_votes=st["shop_votes"], pack_seat=st["pack_seat"],
-                    seats=[CoopSeatView(deck=d["remaining"], hand=d["hand"]) for d in st["decks"]])
+                    seats=[coop_seat(d, st.get("stats", [])[i] if i < len(st.get("stats", [])) else {})
+                           for i, d in enumerate(st["decks"])])
+
+
+def coop_seat(deck: dict[str, Any], stats: dict[str, Any]) -> CoopSeatView:
+    return CoopSeatView(deck=deck["remaining"], hand=deck["hand"], hands=int(stats.get("hands") or 0),
+                        chips=score(float(stats.get("chips") or 0)),
+                        best_hand=score(float(stats.get("best_hand") or 0)),
+                        best_hand_name=stats.get("best_hand_name"), discards=int(stats.get("discards") or 0))
 
 
 def game_view(run: Run, G: Game, seat: int | None = None) -> GameView:

@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from balatro_api.application.dto import (
+    EmoteName,
     ImportedRun,
     MatchSettingsChange,
     NewGame,
@@ -273,3 +274,15 @@ class SelectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cards: list[int] = Field(default_factory=list, max_length=8, description="Hand card ids")
+
+
+class KickRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    seat: int = Field(ge=0, le=1, description="The seat of the player to send away")
+
+
+class EmoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    emote: EmoteName

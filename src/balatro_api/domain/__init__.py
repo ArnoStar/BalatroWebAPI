@@ -3,6 +3,7 @@
 from .errors import DomainError, GameNotFound, GameOver, IllegalAction, InvalidGameSettings, Locked, VersionConflict
 from .match import (
     BLIND_CHOICES,
+    EMOTES,
     MATCH_MODES,
     TIMERS,
     InAnotherMatch,
@@ -34,6 +35,7 @@ from .stats import CAREER_STATS, JokerUsage, RunStats
 __all__ = [
     "ANONYMOUS_PLAYER",
     "BLIND_CHOICES",
+    "EMOTES",
     "MATCH_MODES",
     "RUN_MODES",
     "TIMERS",

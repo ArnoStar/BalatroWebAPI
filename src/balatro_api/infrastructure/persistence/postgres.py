@@ -16,6 +16,7 @@ from __future__ import annotations
 import builtins
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from psycopg import Connection, sql
@@ -403,6 +404,16 @@ class PostgresGameRepository:
                 if row is None:
                     raise MatchNotFound(match.id)
                 raise VersionConflict(expected_version, row["version"])
+
+    def finished_matches(self, player_id: str, limit: int | None = None,
+                         before: datetime | None = None) -> builtins.list[Match]:
+        with self._tx() as conn:
+            rows = conn.execute("SELECT * FROM matches WHERE players @> ARRAY[%s]::text[] AND status = 'finished' "
+                                "AND coalesce(doc->>'result', '') <> 'closed' "
+                                "AND (%s::timestamptz IS NULL OR updated_at < %s) "
+                                "ORDER BY updated_at DESC LIMIT %s",
+                                (player_id, before, before, limit)).fetchall()
+        return [self._match(r) for r in rows]
 
     # ------------------------------------------------------------ everyone
     def leaderboard(self, board: LeaderboardName, deck: str | None, stake: int | None, limit: int,

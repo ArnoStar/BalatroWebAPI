@@ -14,6 +14,7 @@ from balatro_api.domain import Command, GameSettings, Match, Phase, Progress, Ru
 from .dto import (
     Catalog,
     CollectionView,
+    CoopDecksView,
     FeedbackEvent,
     GameView,
     GlobalStats,
@@ -160,6 +161,10 @@ class GameEngine(Protocol):
         """The public part of a run, as the other player of a match sees it."""
         ...
 
+    def coop_decks(self, run: Run) -> CoopDecksView:
+        """A coop run's two decks (each player's cards, and those still to draw: never their order)."""
+        ...
+
 
 @dataclass(frozen=True)
 class PlayerRecord:
@@ -243,6 +248,12 @@ class MatchRepository(Protocol):
     def save_match(self, match: Match, expected_version: int) -> None:
         """Store the match (its version + 1).  Raises VersionConflict when the
         stored match is not at ``expected_version``."""
+        ...
+
+    def finished_matches(self, player_id: str, limit: int | None = None,
+                         before: datetime | None = None) -> list[Match]:
+        """The player's finished matches (not lobbies closed before starting), the latest first
+        (by ``updated_at``), only those before ``before`` if given."""
         ...
 
 

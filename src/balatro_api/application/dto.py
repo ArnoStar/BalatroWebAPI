@@ -280,6 +280,12 @@ class SettingsView:
 class CoopSeatView:
     deck: int  # cards left in their deck
     hand: int  # cards in their hand (the turn's is ``hand``)
+    # the player's numbers this run: hands played, the chips they scored, their best hand, discards
+    hands: int = 0
+    chips: Score = 0
+    best_hand: Score = 0
+    best_hand_name: str | None = None
+    discards: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -909,6 +915,8 @@ class PlayerProfileView:
     stats: PlayerStats | None = None
     collection: CollectionView | None = None
     runs: list[GameSummaryView] = field(default_factory=list)  # recent runs (others': finished ones only)
+    multiplayer: MultiplayerStats | None = None  # their PvP and coop matches
+    matches: list[MatchHistoryEntry] = field(default_factory=list)  # their latest matches
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -936,6 +944,7 @@ class WatchView:
 MatchMode = Literal["pvp", "coop"]
 MatchStatusName = Literal["lobby", "playing", "finished"]
 BlindChoice = Literal["select", "skip"]
+EmoteName = Literal["gg", "nice", "wow", "oops", "hurry", "thanks", "good_luck", "well_played"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -971,6 +980,7 @@ class MatchPlayerView:
     you: bool
     host: bool
     left: bool = False  # left the match (it is lost)
+    id: str | None = None  # their player id (their profile: GET /players/{id})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1078,6 +1088,55 @@ class CoopStepsView:
 
 
 @dataclass(frozen=True, kw_only=True)
+class MatchSummaryPlayer:
+    """How the match went for one player (by seat)."""
+
+    seat: int
+    name: str | None
+    best_hand: Score = 0  # their best single hand (coop: their hands only)
+    # PvP
+    hp: int | None = None  # hit points left
+    damage_dealt: int | None = None  # hit points the other player lost to their chips
+    damage_taken: int | None = None
+    biggest_hit: int | None = None  # the most hit points their chips took at once
+    rounds_won: int | None = None  # blinds where they made more chips than the other player
+    rounds_lost: int | None = None  # blinds they lost (not beaten)
+    # coop
+    hands: int | None = None  # hands they played
+    chips: Score | None = None  # the chips their hands scored
+    best_hand_name: str | None = None  # (coop) the poker hand of their best hand
+    discards: int | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchSummaryView:
+    """How a finished match went."""
+
+    ante: int  # the furthest ante reached
+    rounds: int  # PvP: the blinds both finished; coop: the run's rounds
+    run_won: bool | None = None  # coop: the run was won (ante 8 beaten)
+    players: list[MatchSummaryPlayer]
+
+
+@dataclass(frozen=True, kw_only=True)
+class RematchView:
+    """The match the players of a finished match asked to play next."""
+
+    match_id: str
+    code: str
+    by_you: bool  # you asked for it (you are its host)
+    open: bool  # still in its lobby: join it with POST /matches/{id}/rematch (or its code)
+
+
+@dataclass(frozen=True, kw_only=True)
+class EmoteView:
+    seq: int  # it grows with each emote of the match
+    seat: int  # who sent it
+    emote: EmoteName
+    at: datetime
+
+
+@dataclass(frozen=True, kw_only=True)
 class MatchView:
     id: str
     version: int
@@ -1094,3 +1153,91 @@ class MatchView:
     result: MatchResultView | None
     server_time: datetime  # (for the timer's countdown)
     coop: CoopMatchView | None = None
+    summary: MatchSummaryView | None = None  # once finished: how it went
+    rematch: RematchView | None = None  # once finished: the match its players asked to play next
+    emotes: list[EmoteView] = field(default_factory=list)  # the emotes of the last seconds, oldest first
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchHistoryEntry:
+    """A match a player played (finished), as their history lists it."""
+
+    id: str
+    mode: MatchMode
+    settings: MatchSettingsView
+    seed: str | None  # the seed the runs were played with
+    created_at: datetime
+    finished_at: datetime | None
+    seat: int  # the player's
+    players: list[MatchPlayerView]
+    result: MatchResultView
+    summary: MatchSummaryView | None  # (None: a match finished before summaries were kept)
+    runs: list[str | None]  # by seat: the runs to watch again (coop: the same run twice)
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchHistoryView:
+    matches: list[MatchHistoryEntry]  # the latest first
+    next_before: datetime | None  # for the next page (``before``); None: no more
+
+
+@dataclass(frozen=True, kw_only=True)
+class PvPStats:
+    played: int = 0
+    won: int = 0
+    lost: int = 0
+    drawn: int = 0
+    gave_up: int = 0  # matches the player left (lost)
+    opponent_left: int = 0  # matches won because the other player left
+    streak: int = 0  # PvP matches won in a row, up to the latest
+    best_streak: int = 0
+    damage_dealt: int = 0
+    damage_taken: int = 0
+    biggest_hit: int = 0
+    best_ante: int = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class CoopStats:
+    played: int = 0
+    runs_won: int = 0  # coop runs won (ante 8 beaten)
+    best_ante: int = 0
+    best_round: int = 0
+    hands: int = 0  # hands the player played
+    chips: Score = 0  # the chips their hands scored
+    best_hand: Score = 0
+    best_hand_name: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchOpponentStats:
+    """The players someone played with most (PvP: against; coop: with)."""
+
+    id: str  # their player id
+    name: str | None
+    played: int
+    won: int = 0  # PvP: matches the player won against them
+    lost: int = 0
+    best_ante: int = 0  # coop: the furthest ante together
+
+
+@dataclass(frozen=True, kw_only=True)
+class MultiplayerStats:
+    pvp: PvPStats
+    coop: CoopStats
+    rivals: list[MatchOpponentStats]  # PvP opponents, most played first
+    partners: list[MatchOpponentStats]  # coop partners, most played first
+
+
+@dataclass(frozen=True, kw_only=True)
+class CoopDeckView:
+    """A coop player's deck: all their playing cards, and those still to draw (by suit and rank, never in order)."""
+
+    seat: int
+    full_deck: list[DeckCardView]
+    remaining: list[DeckCardView]
+
+
+@dataclass(frozen=True, kw_only=True)
+class CoopDecksView:
+    seats: list[CoopDeckView]
