@@ -139,6 +139,8 @@ def test_rounds_cost_hit_points(app):
     m = call(app, "ann", "GET", f"/matches/{a['id']}")
     assert m["pvp"]["waiting"] == "round" and not m["pvp"]["can_cash_out"]
     assert m["pvp"]["opponent"]["phase"] == "playing" and m["pvp"]["opponent"]["blind"]["key"] == "bl_small"
+    opp = m["pvp"]["opponent"]
+    assert len(opp["full_deck"]) == 52 and opp["deck_remaining"] == 44 and "id" not in opp["full_deck"][0]
     assert call(app, "bob", "GET", f"/matches/{a['id']}")["pvp"]["opponent_waiting"] == "round"
     game = lose_round(app, "bob", b["run_id"])
     assert game["phase"] == "round_eval"  # a lost round doesn't end the run

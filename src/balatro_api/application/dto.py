@@ -957,6 +957,8 @@ class OpponentView:
     jokers: list[CardView]
     consumables: int  # how many consumables they hold
     deck_size: int  # cards in their full deck
+    full_deck: list[DeckCardView] = field(default_factory=list)  # their whole deck, by suit and rank (not its order)
+    deck_remaining: int = 0  # cards left to draw
     vouchers: list[str]
     poker_hands: list[PokerHandView]  # (only the hands they have levelled up or played)
     won: bool

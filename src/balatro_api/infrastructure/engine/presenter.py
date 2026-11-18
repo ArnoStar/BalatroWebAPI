@@ -166,14 +166,18 @@ def cards_view(G: Game, area: Any) -> list[CardView]:
     return [card_view(G, c, area.name) for c in area.cards]
 
 
-def deck_view(G: Game) -> DeckView:
+def deck_cards(cards: list[Any]) -> list[DeckCardView]:
+    """Playing cards by suit and rank (never in the deck's order)."""
     def key(c: Any) -> tuple[int, int]:
         return SUIT_ORDER.get(c.base.suit, 4), -(c.base.id or 0)
-    cards = [DeckCardView(key=c.config.center.key, card_key=c.config.card_key, rank=c.base.value, suit=c.base.suit,
-                          enhancement=c.config.center.key if c.config.center.key != "c_base" else None,
-                          edition=c.edition.type if c.edition else None, seal=c.seal)
-             for c in sorted(G.deck.cards, key=key)]
-    return DeckView(remaining=len(G.deck.cards), total=len(G.playing_cards), cards=cards)
+    return [DeckCardView(key=c.config.center.key, card_key=c.config.card_key, rank=c.base.value, suit=c.base.suit,
+                         enhancement=c.config.center.key if c.config.center.key != "c_base" else None,
+                         edition=c.edition.type if c.edition else None, seal=c.seal)
+            for c in sorted(cards, key=key)]
+
+
+def deck_view(G: Game) -> DeckView:
+    return DeckView(remaining=len(G.deck.cards), total=len(G.playing_cards), cards=deck_cards(G.deck.cards))
 
 
 # ------------------------------------------------------------------ blinds
@@ -322,6 +326,7 @@ def opponent_view(run: Run, G: Game) -> OpponentView:
         discards_left=cr.discards_left, hand_size=G.hand.config.card_limit, joker_slots=G.jokers.config.card_limit,
         round_score=score(float(GAME.chips or 0)), blind=blind_view(G), jokers=cards_view(G, G.jokers),
         consumables=len(G.consumeables.cards), deck_size=len(G.playing_cards),
+        full_deck=deck_cards(G.playing_cards), deck_remaining=len(G.deck.cards),
         vouchers=[k for k, v in GAME.used_vouchers.items() if v],
         poker_hands=[h for h in poker_hands_view(G) if h.level > 1 or h.played > 0], won=bool(GAME.won))
 
