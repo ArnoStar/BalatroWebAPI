@@ -27,6 +27,7 @@ runs' locks (always in that order).
 from __future__ import annotations
 
 import random
+from collections import deque
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any, Literal, cast
@@ -51,6 +52,9 @@ from .dto import (
     ActionResult,
     BlindChoice,
     BlindVoteView,
+    CoopMatchView,
+    CoopStep,
+    CoopStepsView,
     MatchMode,
     MatchPlayerView,
     MatchResultView,
@@ -67,6 +71,7 @@ from .ports import Clock, GameEngine, GameRepository, IdGenerator, MatchRecord, 
 from .statistics import score
 
 MATCH_PROFILE: dict[str, Any] = {"all": True}  # multiplayer runs: everything unlocked, the same pools for both
+STEPS_KEPT = 64  # a coop run's last actions kept for the other player to watch
 
 
 def match_lock(match_id: str) -> str:
@@ -80,6 +85,10 @@ class Matches:
                  clock: Clock, ids: IdGenerator) -> None:
         self.engine, self.games, self.matches = engine, games, matches
         self.locks, self.clock, self.ids = locks, clock, ids
+        # (coop, in memory: one process) the cards the player whose turn it is has selected, by match:
+        # (seat, card ids, sequence); a run's last actions, to watch
+        self.selections: dict[str, tuple[int, list[int], int]] = {}
+        self.steps: dict[str, deque[CoopStep]] = {}
 
     # ------------------------------------------------------------ loading
     def runs(self, match: Match) -> list[Run]:
@@ -132,8 +141,35 @@ class Matches:
     def pvp_state(self, records: list[MatchRecord]) -> PvPState:
         return self.engine.pvp_state([r.blinds for r in records], [r.game_over for r in records])
 
+    # ------------------------------------------------------------ coop
+    def record_step(self, run_id: str, step: CoopStep) -> None:
+        self.steps.setdefault(run_id, deque(maxlen=STEPS_KEPT)).append(step)
+
+    def steps_since(self, run_id: str, version: int, current: int) -> CoopStepsView:
+        steps = [st for st in self.steps.get(run_id, ()) if st.version >= version]
+        complete = version >= current or (bool(steps) and steps[0].version == version
+                                          and len(steps) == current - version)
+        return CoopStepsView(steps=steps if complete else [], complete=complete)
+
+    def coop_view(self, match: Match, seat: int) -> CoopMatchView | None:
+        run_id = match.players[seat].run_id
+        state = self.engine.coop_state(self.games.get(run_id)) if run_id else None
+        if state is None:
+            return None
+        sel_seat, cards, seq = self.selections.get(match.id, (-1, [], 0))
+        turn = int(state["turn"])
+        return CoopMatchView(turn=turn, your_turn=turn == seat, selection=cards if sel_seat == turn else [],
+                             selection_seq=seq, over=bool(state["over"]))
+
     def refresh(self, match: Match) -> tuple[list[MatchRecord], PvPState | None]:
         """Catch up (the caller holds the match's lock): who waits since when, the timer, the end."""
+        if match.status is MatchStatus.PLAYING and match.mode == "coop":
+            run_id = match.players[0].run_id
+            coop = self.engine.coop_state(self.games.get(run_id)) if run_id else None
+            if coop is not None and coop["over"]:
+                match.finish(None, "game_over", self.clock.now())
+                self.save(match)
+            return [], None
         if match.status is not MatchStatus.PLAYING or match.mode != "pvp":
             return [], None
         changed = False
@@ -236,13 +272,15 @@ class Matches:
             if state is None:
                 state = self.pvp_state(records)
             pvp = self.pvp_view(match, seat, records, state)
+        coop = self.coop_view(match, seat) if match.mode == "coop" and match.status is not MatchStatus.LOBBY else None
         return MatchView(
             id=match.id, version=match.version, code=match.code, mode=cast(MatchMode, match.mode),
             status=match.status.value, seat=seat, host=match.host == player_id,
             settings=MatchSettingsView(deck=s.deck, stake=s.stake, seed=s.seed, timer=s.timer),
             players=[MatchPlayerView(seat=i, name=p.name, you=p.id == player_id, host=p.id == match.host,
                                      left=p.left) for i, p in enumerate(match.players)],
-            run_id=me.run_id, run_version=run_version, pvp=pvp, result=result, server_time=self.clock.now())
+            run_id=me.run_id, run_version=run_version, pvp=pvp, result=result, server_time=self.clock.now(),
+            coop=coop)
 
     def pvp_view(self, match: Match, seat: int, records: list[MatchRecord], state: PvPState) -> PvPView:
         other = 1 - seat
@@ -302,8 +340,6 @@ class CreateMatch:
         m = self.m
         settings = MatchSettings(deck=request.deck, stake=request.stake, seed=request.seed, timer=request.timer)
         m.engine.check_settings(GameSettings(seed=settings.seed or "A", deck=settings.deck, stake=settings.stake))
-        if request.mode != "pvp":
-            raise IllegalAction("this mode isn't available yet")
         leave_lobbies(m, player)
         now = m.clock.now()
         match = Match(id=m.ids.new_id(), code=m.new_code(), mode=request.mode, host=player.id, created_at=now,
@@ -391,8 +427,9 @@ class StartMatch:
             s = match.settings
             seed = s.seed or m.engine.random_seed()
             now = m.clock.now()
-            run_ids = []
-            for p in match.players:
+            run_ids: list[str] = []
+            # PvP: a run each; coop: one run for both (its owner the host; the other player plays it too)
+            for p in match.players if match.mode == "pvp" else match.players[:1]:
                 settings = m.engine.check_settings(GameSettings(
                     seed=seed, deck=s.deck, stake=s.stake, game_speed=p.game_speed, seeded=True, mode=match.mode))
                 run_id = m.ids.new_id()
@@ -403,6 +440,8 @@ class StartMatch:
                 run.stats = m.engine.run_stats(run)
                 m.games.add(run)
                 run_ids.append(run_id)
+            if match.mode == "coop":
+                run_ids = run_ids * len(match.players)
             match.start(settings.seed, run_ids, now)
             m.save(match)
             return m.view(match, player.id)
@@ -451,5 +490,39 @@ class LeaveMatch:
                 m.save(match)
 
 
-__all__ = ["ChangeMatchSettings", "CreateMatch", "CurrentMatch", "GetMatch", "JoinMatch", "LeaveMatch", "Matches",
-           "StartMatch", "VoteBlind", "match_lock"]
+
+
+class SetSelection:
+    """Coop: the cards the player whose turn it is has selected, for the other player to watch (not saved)."""
+
+    def __init__(self, matches: Matches) -> None:
+        self.m = matches
+
+    def __call__(self, player: Player, match_id: str, cards: list[int]) -> None:
+        m = self.m
+        match = m.matches.get_match(match_id)
+        seat = match.member(player.id)
+        if match.mode != "coop" or match.status is not MatchStatus.PLAYING:
+            raise IllegalAction("not a coop match being played")
+        _, _, seq = m.selections.get(match.id, (-1, [], 0))
+        m.selections[match.id] = (seat, list(cards)[:8], seq + 1)
+
+
+class GetSteps:
+    """Coop: the run's actions since a version, with what the game showed (the other player's, to watch them)."""
+
+    def __init__(self, matches: Matches) -> None:
+        self.m = matches
+
+    def __call__(self, player: Player, match_id: str, since: int) -> CoopStepsView:
+        m = self.m
+        match = m.matches.get_match(match_id)
+        seat = match.member(player.id)
+        run_id = match.players[seat].run_id
+        if match.mode != "coop" or run_id is None:
+            raise IllegalAction("not a coop match")
+        return m.steps_since(run_id, since, m.games.get(run_id).version)
+
+
+__all__ = ["ChangeMatchSettings", "CreateMatch", "CurrentMatch", "GetMatch", "GetSteps", "JoinMatch", "LeaveMatch",
+           "Matches", "SetSelection", "StartMatch", "VoteBlind", "match_lock"]

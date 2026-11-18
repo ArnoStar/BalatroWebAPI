@@ -205,6 +205,28 @@ or two) shows the rest:
 - The match is over (`result`) when a player has no hit points left, a run
   ends for good, or a player leaves (`POST /matches/{id}/leave`).
 
+**Coop.** Both players play one run (`run_id`, the host's), in turns, with
+the engine's coop rules (`settings.mode: "coop"`, `balatro.mods.coop`): a deck
+each, the jokers shared (10 slots, 5 each: all count, each player sells and
+moves only theirs, `CardView.owner`), hands and hand levels shared, discards
+doubled, blinds growing faster. The partner plays the host's run with the run
+routes too (they're a member of its match); each action is played for the
+caller's seat (`GameView.coop.seat`), and the legal actions are theirs:
+
+- `GameView.coop`: whose turn it is, both halves of the jokers, who has asked
+  to leave the shop, who opened the pack on screen, both decks' sizes. The
+  turn passes after each hand played; the other player's hand comes up (event
+  `turn`). A round starts with the player who didn't play last.
+- The shop is left once both have played `end_shop` (event `shop_vote` for
+  the first one).
+- Watching: the player whose turn it is sends the cards they select
+  (`PUT /matches/{id}/selection`, 204); the match view has them
+  (`coop.selection`, `coop.selection_seq`). `GET /matches/{id}/steps?since=`
+  gives the run's actions from that version on, with their events and views,
+  for the other player to play them again (`complete: false`: too old, load
+  the run again). Both are kept in memory: one API process.
+- The match is over when the run ends or a player leaves.
+
 Match runs aren't listed with the player's runs and don't count for
 statistics. Without sign-in (development), a caller may name itself with the
 token `dev:<name>` to try a match alone with two tabs.

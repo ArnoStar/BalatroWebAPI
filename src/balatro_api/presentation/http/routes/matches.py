@@ -9,14 +9,17 @@ player of another match gets ``404 match_not_found``.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Response, status
+from typing import Annotated
 
-from balatro_api.application.dto import MatchView
+from fastapi import APIRouter, Query, Response, status
+
+from balatro_api.application.dto import CoopStepsView, MatchView
 from balatro_api.presentation.http.deps import CurrentPlayer, Uses
 from balatro_api.presentation.http.schemas import (
     JoinMatchRequest,
     MatchSettingsRequest,
     NewMatchRequest,
+    SelectionRequest,
     VoteRequest,
 )
 
@@ -72,3 +75,17 @@ def leave_match(match_id: str, player: CurrentPlayer, uses: Uses) -> Response:
     """Out of the lobby (the host closes it); in a match being played, the other player wins."""
     uses.leave_match(player, match_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put("/{match_id}/selection", status_code=status.HTTP_204_NO_CONTENT, summary="Your selection (coop)")
+def set_selection(match_id: str, body: SelectionRequest, player: CurrentPlayer, uses: Uses) -> Response:
+    """The hand cards you have selected on your turn, for the other player to watch (``coop.selection``)."""
+    uses.set_selection(player, match_id, body.cards)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{match_id}/steps", response_model=CoopStepsView, summary="The coop run's actions since a version")
+def coop_steps(match_id: str, player: CurrentPlayer, uses: Uses, since: Annotated[int, Query(ge=0)]) -> CoopStepsView:
+    """Each action with what the game showed (its ``events``), to play the other player's actions again on your
+    screen. ``complete`` false: they aren't all kept any more: load the run."""
+    return uses.coop_steps(player, match_id, since)

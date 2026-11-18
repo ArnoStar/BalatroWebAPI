@@ -22,6 +22,7 @@ import balatro
 from balatro import DECK_NAMES, Game, Profile
 from balatro.data import load
 from balatro.mods import pvp as pvp_rules
+from balatro.mods.coop import Coop
 from balatro.mods.pvp import PvP
 from balatro.rng import SEED_ALPHABET, normalize_seed
 
@@ -149,9 +150,24 @@ class BalatroEngine:
             self._cache.pop(run_id, None)
 
     # ------------------------------------------------------------ reads
-    def view(self, run: Run) -> GameView:
-        with self._game(run) as G:
-            return presenter.game_view(run, G)
+    @staticmethod
+    @contextmanager
+    def _seat(G: Game, seat: int | None) -> Iterator[None]:
+        """A coop run's legal actions are this seat's while the context lasts."""
+        coop = G.mod("coop")
+        if not isinstance(coop, Coop):
+            yield
+            return
+        before = coop.viewer
+        coop.viewer = seat
+        try:
+            yield
+        finally:
+            coop.viewer = before
+
+    def view(self, run: Run, seat: int | None = None) -> GameView:
+        with self._game(run) as G, self._seat(G, seat):
+            return presenter.game_view(run, G, seat)
 
     def load(self, run: Run) -> tuple[Progress, RunStats]:
         try:
@@ -165,8 +181,8 @@ class BalatroEngine:
         with self._game(run) as G:
             return presenter.run_stats(G)
 
-    def legal_actions(self, run: Run) -> list[LegalAction]:
-        with self._game(run) as G:
+    def legal_actions(self, run: Run, seat: int | None = None) -> list[LegalAction]:
+        with self._game(run) as G, self._seat(G, seat):
             return legal_actions(G)
 
     def preview_hand(self, run: Run, cards: Sequence[int]) -> HandPreview:
@@ -204,13 +220,18 @@ class BalatroEngine:
         return Outcome(command=Command(command), progress=presenter.progress(G), stats=presenter.run_stats(G),
                        events=presenter.feedback_events(feedback, G), state=G)
 
-    def apply(self, run: Run, action: PlayerAction) -> Outcome:
+    def apply(self, run: Run, action: PlayerAction, seat: int | None = None) -> Outcome:
         with self._game(run) as G:
             copy = G.clone()
-        return self._play(copy, to_command(copy, action))
+        command = to_command(copy, action)
+        if seat is not None:
+            command["seat"] = seat  # (a coop run: whose action it is)
+        return self._play(copy, command)
 
-    def apply_debug(self, run: Run, command: dict[str, Any]) -> Outcome:
+    def apply_debug(self, run: Run, command: dict[str, Any], seat: int | None = None) -> Outcome:
         cmd = dict(command)
+        if seat is not None:
+            cmd["seat"] = seat
         kind = cmd.get("cmd")
         if kind not in DEBUG_COMMANDS:
             raise IllegalAction(f"debug commands are {', '.join(DEBUG_COMMANDS)}")
@@ -288,6 +309,15 @@ class BalatroEngine:
         return PvPState(hp=s["hp"], rounds=s["rounds"], over=s["over"], winner=s["winner"],
                         start_hp=pvp_rules.START_HP, safe_antes=pvp_rules.SAFE_ANTES,
                         loss_damage=pvp_rules.LOSS_DAMAGE)
+
+    def coop_state(self, run: Run) -> dict[str, Any] | None:
+        with self._game(run) as G:
+            coop = G.mod("coop")
+            if not isinstance(coop, Coop):
+                return None
+            state: dict[str, Any] = coop.state()
+            state["over"] = G.is_game_over()
+            return state
 
     def opponent_view(self, run: Run) -> OpponentView:
         with self._game(run) as G:
