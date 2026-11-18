@@ -343,7 +343,8 @@ class _ChangeRun:
             outcome = play(run)
             version = run.version
             run.record(outcome.command, outcome.progress, self.clock.now(), stats=outcome.stats, debug=debug)
-            run.owner_name = player.name or run.owner_name
+            if run.owned_by(player.id):  # (a coop partner's action keeps the owner's name)
+                run.owner_name = player.name or run.owner_name
             self.games.save(run, expected_version=version)
             self.engine.commit(run, outcome)
             if pointer is not None and not run.replay:

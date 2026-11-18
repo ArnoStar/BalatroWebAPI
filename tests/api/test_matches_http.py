@@ -370,6 +370,8 @@ def test_coop_decks_and_summary(app):
     assert seats[0]["hands"] == 1 and seats[0]["discards"] == 1 and seats[0]["best_hand_name"]
     assert seats[1]["hands"] == 0
     assert "id" not in decks[0]["full_deck"][0]
+    act(app, "bob", run, type="sort", mode="suit")  # (the partner's action keeps the owner's name)
+    assert call(app, "cy", "GET", "/players/local:ann")["name"] == "ann"
     call(app, "bob", "POST", f"/matches/{a['id']}/leave", 204)
     s = call(app, "ann", "GET", f"/matches/{a['id']}")["summary"]
     assert s["ante"] == 1 and s["run_won"] is False
