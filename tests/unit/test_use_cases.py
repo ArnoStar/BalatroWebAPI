@@ -64,16 +64,16 @@ class FakeEngine:
     def run_stats(self, run: Run) -> RunStats:
         return RunStats(most_money=4)
 
-    def view(self, run: Run) -> Any:
+    def view(self, run: Run, seat: int | None = None) -> Any:
         return {"id": run.id, "version": run.version}
 
-    def apply(self, run: Run, action: PlayerAction) -> Outcome:
+    def apply(self, run: Run, action: PlayerAction, seat: int | None = None) -> Outcome:
         if self.fail:
             raise self.fail
         return Outcome(Command({"cmd": action.type}), Progress(self.next_phase, 1, 1, 4, False), self.stats, [],
                        object())
 
-    def apply_debug(self, run: Run, command: dict[str, Any]) -> Outcome:
+    def apply_debug(self, run: Run, command: dict[str, Any], seat: int | None = None) -> Outcome:
         return Outcome(Command(command), START, RunStats(), [], object())
 
     def commit(self, run: Run, outcome: Outcome) -> None:

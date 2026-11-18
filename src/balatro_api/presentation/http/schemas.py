@@ -231,7 +231,8 @@ GameSpeed = Annotated[float, Field(1, json_schema_extra={"enum": [0.5, 1, 2, 4]}
 class NewMatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["pvp", "coop"] = Field("pvp", description="pvp: each player their own run, hit points")
+    mode: Literal["pvp", "coop"] = Field("pvp", description="pvp: each player their own run, hit points; coop: one "
+                                                         "run for both, in turns")
     deck: str = Field("b_red", description="The deck both players play")
     stake: int = Field(1, ge=1, le=8)
     seed: Seed = None
@@ -266,3 +267,9 @@ class VoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     choice: Literal["select", "skip"] = Field(..., description="Play the blind on deck, or skip it (both must skip)")
+
+
+class SelectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cards: list[int] = Field(default_factory=list, max_length=8, description="Hand card ids")

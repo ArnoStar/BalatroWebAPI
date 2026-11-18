@@ -22,6 +22,8 @@ from balatro_api.application.dto import (
     CardTextEvent,
     CardUnlockedEvent,
     CardView,
+    CoopSeatView,
+    CoopView,
     DeckCardView,
     DeckView,
     DollarsEvent,
@@ -40,9 +42,11 @@ from balatro_api.application.dto import (
     RunInfo,
     SettingsView,
     ShopView,
+    ShopVoteEvent,
     StatusTextEvent,
     Stickers,
     TagView,
+    TurnEvent,
 )
 from balatro_api.application.statistics import score
 from balatro_api.domain import CAREER_STATS, JokerUsage, Phase, Progress, Run, RunStats
@@ -157,6 +161,7 @@ def card_view(G: Game, c: Any, area: str, face_up: bool = False) -> CardView:
         sell_value=c.sell_cost if area in ("jokers", "consumeables") else None,
         bonus_chips=(ab.perma_bonus or None) if playing else None,
         ability=_joker_ability(ab) if kind == "joker" else None,
+        owner=getattr(c, "seat", None) if area == "jokers" else None,
     )
 
 
@@ -274,7 +279,17 @@ def info_view(G: Game) -> RunInfo:
                    round_targets=targets)
 
 
-def game_view(run: Run, G: Game) -> GameView:
+def coop_view(G: Game, seat: int | None) -> CoopView | None:
+    m = G.mod("coop")
+    if m is None:
+        return None
+    st = m.state()
+    return CoopView(seat=seat, turn=st["turn"], your_turn=seat == st["turn"], joker_slots=st["limits"],
+                    shop_votes=st["shop_votes"], pack_seat=st["pack_seat"],
+                    seats=[CoopSeatView(deck=d["remaining"], hand=d["hand"]) for d in st["decks"]])
+
+
+def game_view(run: Run, G: Game, seat: int | None = None) -> GameView:
     GAME = G.GAME
     cr = GAME.current_round
     s = run.settings
@@ -313,6 +328,7 @@ def game_view(run: Run, G: Game) -> GameView:
         last_hand=HandScore(hand=last.hand, chips=last.chips, mult=last.mult, score=last.score) if last else None,
         info=info_view(G),
         actions=legal_actions(G),
+        coop=coop_view(G, seat),
     )
 
 
@@ -383,6 +399,10 @@ def feedback_events(entries: list[dict[str, Any]], G: Game | None = None) -> lis
             out.append(AttentionTextEvent(t=t, card=e["card"], key=e["key"]))
         elif kind == "card_unlocked":
             out.append(CardUnlockedEvent(t=t, key=e["key"], set=e["set"]))
+        elif kind == "turn":
+            out.append(TurnEvent(t=t, seat=e["seat"]))
+        elif kind == "shop_vote":
+            out.append(ShopVoteEvent(t=t, seats=list(e["seats"])))
         elif kind == "card_removed" and e["area"] in AREA_NAMES:
             out.append(CardRemovedEvent(t=t, card=e["card"], area=AREA_NAMES[e["area"]]))
     return out

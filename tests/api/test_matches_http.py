@@ -207,3 +207,61 @@ def test_knocked_out(app):
     m = call(app, "bob", "GET", f"/matches/{a['id']}")
     assert m["status"] == "finished" and m["pvp"]["hp"] == [50, 0]
     assert m["result"] == {"winner": 0, "you_won": False, "reason": "hp"}
+
+
+# ------------------------------------------------------------------ coop
+def coop_started(app: TestClient) -> tuple[dict, dict]:
+    m = call(app, "ann", "POST", "/matches", 201, mode="coop", seed="TESTSEED")
+    call(app, "bob", "POST", "/matches/join", code=m["code"])
+    a = call(app, "ann", "POST", f"/matches/{m['id']}/start")
+    b = call(app, "bob", "GET", f"/matches/{m['id']}")
+    assert a["run_id"] == b["run_id"] and a["coop"]["turn"] == 0
+    assert a["coop"]["your_turn"] and not b["coop"]["your_turn"]
+    return a, b
+
+
+def test_coop_is_one_run_played_in_turns(app):
+    a, b = coop_started(app)
+    run = a["run_id"]
+    g_ann = call(app, "ann", "GET", f"/games/{run}")
+    g_bob = call(app, "bob", "GET", f"/games/{run}")
+    assert g_ann["settings"]["mode"] == "coop" and g_ann["joker_slots"] == 10 and g_ann["discards_left"] == 8
+    assert g_ann["coop"]["seat"] == 0 and g_bob["coop"]["seat"] == 1
+    assert "select_blind" in [x["type"] for x in g_ann["actions"]]
+    assert "select_blind" not in [x["type"] for x in g_bob["actions"]]
+    call(app, "cy", "GET", f"/games/{run}", 404)  # (not a player of it)
+    act(app, "bob", run, 409, type="select_blind")  # (ann's turn)
+    g = act(app, "ann", run, type="select_blind")["game"]
+    hand = [c["id"] for c in g["hand"]]
+    act(app, "bob", run, 409, type="play", cards=hand[:1])
+    result = act(app, "ann", run, type="play", cards=hand[:5])
+    assert result["game"]["coop"]["turn"] == 1 and any(e["type"] == "turn" for e in result["events"])
+    assert not set(hand) & {c["id"] for c in result["game"]["hand"]}  # (bob's own cards now)
+    # bob watches: the steps since his version, and ann's selection on her turns
+    steps = call(app, "bob", "GET", f"/matches/{a['id']}/steps?since=0")
+    assert steps["complete"] and [s["action"]["type"] for s in steps["steps"]] == ["select_blind", "play"]
+    assert steps["steps"][1]["seat"] == 0 and steps["steps"][1]["events"]
+    bob_hand = [c["id"] for c in result["game"]["hand"]]
+    call(app, "bob", "PUT", f"/matches/{a['id']}/selection", 204, cards=bob_hand[:2])
+    m = call(app, "ann", "GET", f"/matches/{a['id']}")
+    assert m["coop"]["selection"] == bob_hand[:2] and m["coop"]["turn"] == 1
+    # bob's turn: his play; then the round is lost when the hands are out
+    g = act(app, "bob", run, type="play", cards=bob_hand[:1])["game"]
+    while g["phase"] == "playing":
+        who = "ann" if g["coop"]["turn"] == 0 else "bob"
+        g = act(app, who, run, type="play", cards=[g["hand"][0]["id"]])["game"]
+    m = call(app, "bob", "GET", f"/matches/{a['id']}")
+    assert g["phase"] == "game_over" and m["status"] == "finished" and m["result"]["reason"] == "game_over"
+
+
+def test_coop_shop_is_left_together(app):
+    a, _ = coop_started(app)
+    run = a["run_id"]
+    act(app, "ann", run, type="select_blind")
+    call(app, "ann", "POST", f"/games/{run}/debug", command={"cmd": "cheat", "win": True})
+    act(app, "bob", run, type="cash_out")
+    g = act(app, "ann", run, type="end_shop")["game"]
+    assert g["phase"] == "shop" and g["coop"]["shop_votes"] == [0]
+    assert "end_shop" not in [x["type"] for x in g["actions"]]
+    g = act(app, "bob", run, type="end_shop")["game"]
+    assert g["phase"] == "blind_select" and g["coop"]["turn"] == 0  # (no hand was played: still ann's turn)

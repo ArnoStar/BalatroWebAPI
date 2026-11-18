@@ -109,6 +109,7 @@ class CardView:
     sell_value: Number | None = None
     bonus_chips: Number | None = None  # playing cards: chips added for good (Hiker)
     ability: dict[str, Any] | None = None  # jokers: the values their effect keeps (mult, x_mult, extra ...)
+    owner: int | None = None  # coop: the seat of the player whose joker it is (they alone sell and move it)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -276,6 +277,25 @@ class SettingsView:
 
 
 @dataclass(frozen=True, kw_only=True)
+class CoopSeatView:
+    deck: int  # cards left in their deck
+    hand: int  # cards in their hand (the turn's is ``hand``)
+
+
+@dataclass(frozen=True, kw_only=True)
+class CoopView:
+    """A coop run: two players in turns, each with their own deck; jokers, hands and discards shared."""
+
+    seat: int | None  # yours (None: not one of the players)
+    turn: int  # whose turn it is: they play, discard and choose the blind (the shown hand is theirs)
+    your_turn: bool
+    joker_slots: list[int]  # each seat's (``jokers``' ``owner``)
+    shop_votes: list[int]  # the seats that asked to leave the shop (it is left once both have)
+    pack_seat: int | None  # who opened the pack on screen (they pick from it)
+    seats: list[CoopSeatView]
+
+
+@dataclass(frozen=True, kw_only=True)
 class GameView:
     id: str
     version: int  # send it back as expected_version to act on exactly this state
@@ -311,6 +331,7 @@ class GameView:
     last_hand: HandScore | None
     info: RunInfo
     actions: list[LegalAction]
+    coop: CoopView | None = None  # a coop run: whose turn it is, the jokers' halves (``actions`` are your seat's)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -480,9 +501,23 @@ class CardRemovedEvent:
     area: AreaName
 
 
+@dataclass(frozen=True, kw_only=True)
+class TurnEvent:
+    type: Literal["turn"] = "turn"
+    t: float
+    seat: int  # coop: the turn passes to this seat (their hand comes up)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ShopVoteEvent:
+    type: Literal["shop_vote"] = "shop_vote"
+    t: float
+    seats: list[int]  # coop: who has asked to leave the shop
+
+
 FeedbackEvent = (HandPanelEvent | CardTextEvent | HandScoredEvent | RoundScoreEvent | DollarsEvent | StatusTextEvent
                  | CardMovedEvent | CardFlippedEvent | CardRemovedEvent | CardJuicedEvent | CardChangedEvent
-                 | AttentionTextEvent | CardUnlockedEvent)
+                 | AttentionTextEvent | CardUnlockedEvent | TurnEvent | ShopVoteEvent)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1014,6 +1049,35 @@ class MatchResultView:
 
 
 @dataclass(frozen=True, kw_only=True)
+class CoopMatchView:
+    """Coop: one run for both (``run_id``), played in turns."""
+
+    turn: int  # whose turn it is
+    your_turn: bool
+    selection: list[int]  # the cards the player whose turn it is has selected (for the other one to watch)
+    selection_seq: int  # it changes with each new selection
+    over: bool  # the run is over (lost)
+
+
+@dataclass(frozen=True, kw_only=True)
+class CoopStep:
+    """One action of a coop run, as its player made it, with what the game showed: the other player plays it
+    again on their screen."""
+
+    version: int  # the run's version before it
+    seat: int  # whose action it was
+    action: dict[str, Any]  # as POST /games/{id}/actions takes it (cards by id)
+    events: list[FeedbackEvent]
+    game: GameView  # the run after it
+
+
+@dataclass(frozen=True, kw_only=True)
+class CoopStepsView:
+    steps: list[CoopStep]
+    complete: bool  # false: some actions since that version aren't kept (the server restarted): load the run
+
+
+@dataclass(frozen=True, kw_only=True)
 class MatchView:
     id: str
     version: int
@@ -1029,3 +1093,4 @@ class MatchView:
     pvp: PvPView | None
     result: MatchResultView | None
     server_time: datetime  # (for the timer's countdown)
+    coop: CoopMatchView | None = None

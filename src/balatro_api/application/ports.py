@@ -85,7 +85,9 @@ class GameEngine(Protocol):
         """A new run's game, from the player's progress (None: fully unlocked, as runs were before progress)."""
         ...
 
-    def view(self, run: Run) -> GameView: ...
+    def view(self, run: Run, seat: int | None = None) -> GameView:
+        """``seat``: a coop run's player (the legal actions are theirs)."""
+        ...
 
     def run_stats(self, run: Run) -> RunStats:
         """What the run has added to the player's statistics so far."""
@@ -96,14 +98,14 @@ class GameEngine(Protocol):
         IllegalAction naming the first command that doesn't replay."""
         ...
 
-    def legal_actions(self, run: Run) -> list[LegalAction]: ...
+    def legal_actions(self, run: Run, seat: int | None = None) -> list[LegalAction]: ...
 
-    def apply(self, run: Run, action: PlayerAction) -> Outcome:
-        """Play the action on a copy of the run's game.  Raises IllegalAction
-        (the run is unchanged)."""
+    def apply(self, run: Run, action: PlayerAction, seat: int | None = None) -> Outcome:
+        """Play the action on a copy of the run's game (``seat``: a coop run's player making it).  Raises
+        IllegalAction (the run is unchanged)."""
         ...
 
-    def apply_debug(self, run: Run, command: dict[str, Any]) -> Outcome:
+    def apply_debug(self, run: Run, command: dict[str, Any], seat: int | None = None) -> Outcome:
         """A test helper command (add a joker, set the money ...)."""
         ...
 
@@ -149,6 +151,10 @@ class GameEngine(Protocol):
         ...
 
     def pvp_state(self, blinds: Sequence[list[dict[str, Any]]], eliminated: Sequence[bool]) -> PvPState: ...
+
+    def coop_state(self, run: Run) -> dict[str, Any] | None:
+        """A coop run's turn, joker slots, shop votes and seats (and whether it is over); None for another run."""
+        ...
 
     def opponent_view(self, run: Run) -> OpponentView:
         """The public part of a run, as the other player of a match sees it."""

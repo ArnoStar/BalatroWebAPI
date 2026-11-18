@@ -24,6 +24,7 @@ from balatro_api.domain import Command, GameNotFound, GameSettings, IllegalActio
 from .dto import (
     ActionResult,
     Catalog,
+    CoopStep,
     GameSummaryView,
     GameView,
     GlobalStats,
@@ -52,9 +53,11 @@ from .matches import (
     CreateMatch,
     CurrentMatch,
     GetMatch,
+    GetSteps,
     JoinMatch,
     LeaveMatch,
     Matches,
+    SetSelection,
     StartMatch,
     VoteBlind,
 )
@@ -63,6 +66,24 @@ from .ports import Authenticator, BoardRow, Clock, GameEngine, GameRepository, I
 from .statistics import player_stats, score
 
 log = logging.getLogger(__name__)
+
+
+def action_dict(a: PlayerAction) -> dict[str, Any]:
+    """An action as POST /games/{id}/actions takes it (the fields it uses)."""
+    d: dict[str, Any] = {"type": a.type}
+    if a.cards:
+        d["cards"] = list(a.cards)
+    if a.card is not None:
+        d["card"] = a.card
+    if a.targets is not None:
+        d["targets"] = list(a.targets)
+    if a.use:
+        d["use"] = True
+    if a.type == "sort":
+        d["mode"] = a.mode
+    if a.to is not None:
+        d["to"] = a.to
+    return d
 
 
 def settings_view(s: GameSettings) -> SettingsView:
@@ -75,6 +96,21 @@ def owned_run(games: GameRepository, player: Player, game_id: str) -> Run:
     if not run.owned_by(player.id):
         raise GameNotFound(game_id)
     return run
+
+
+def member_run(games: GameRepository, matches: Matches | None, player: Player, game_id: str) -> tuple[Run, int | None]:
+    """A run the player plays: their own, or the coop run of a match they are in (with their seat in it).
+    Any other run is "not found"."""
+    run = games.get(game_id)
+    if run.match_id is None or matches is None or run.settings.mode != "coop":
+        if not run.owned_by(player.id):
+            raise GameNotFound(game_id)
+        return run, None
+    match = matches.matches.get_match(run.match_id)
+    seat = match.seat_of(player.id)
+    if seat is None:
+        raise GameNotFound(game_id)
+    return run, seat
 
 
 def is_private(games: GameRepository, player_id: str) -> bool:
@@ -183,11 +219,12 @@ class ImportGame:
 
 
 class GetGame:
-    def __init__(self, engine: GameEngine, games: GameRepository) -> None:
-        self.engine, self.games = engine, games
+    def __init__(self, engine: GameEngine, games: GameRepository, matches: Matches | None = None) -> None:
+        self.engine, self.games, self.matches = engine, games, matches
 
     def __call__(self, player: Player, game_id: str) -> GameView:
-        return self.engine.view(owned_run(self.games, player, game_id))
+        run, seat = member_run(self.games, self.matches, player, game_id)
+        return self.engine.view(run, seat)
 
 
 class GetGameSummary:
@@ -222,19 +259,20 @@ class DeleteGame:
 
 
 class GetLegalActions:
-    def __init__(self, engine: GameEngine, games: GameRepository) -> None:
-        self.engine, self.games = engine, games
+    def __init__(self, engine: GameEngine, games: GameRepository, matches: Matches | None = None) -> None:
+        self.engine, self.games, self.matches = engine, games, matches
 
     def __call__(self, player: Player, game_id: str) -> list[LegalAction]:
-        return self.engine.legal_actions(owned_run(self.games, player, game_id))
+        run, seat = member_run(self.games, self.matches, player, game_id)
+        return self.engine.legal_actions(run, seat)
 
 
 class PreviewHand:
-    def __init__(self, engine: GameEngine, games: GameRepository) -> None:
-        self.engine, self.games = engine, games
+    def __init__(self, engine: GameEngine, games: GameRepository, matches: Matches | None = None) -> None:
+        self.engine, self.games, self.matches = engine, games, matches
 
     def __call__(self, player: Player, game_id: str, cards: Sequence[int]) -> HandPreview:
-        return self.engine.preview_hand(owned_run(self.games, player, game_id), cards)
+        return self.engine.preview_hand(member_run(self.games, self.matches, player, game_id)[0], cards)
 
 
 class GetHistory:
@@ -279,9 +317,11 @@ class _ChangeRun:
 
     def _change(self, player: Player, game_id: str, expected_version: int | None,
                 play: Callable[[Run], Outcome], debug: bool = False,
-                pointer: dict[str, Any] | None = None) -> ActionResult:
+                pointer: dict[str, Any] | None = None, seat: int | None = None,
+                load: Callable[[], Run] | None = None) -> ActionResult:
+        """``seat``, ``load``: a coop run's player (the view is theirs) and how the run is loaded (theirs to play)."""
         with self.locks.hold(game_id):
-            run = owned_run(self.games, player, game_id)
+            run = load() if load is not None else owned_run(self.games, player, game_id)
             run.check_version(expected_version)
             run.check_playable()
             outcome = play(run)
@@ -296,7 +336,7 @@ class _ChangeRun:
                     self.games.save_pointer(run.id, version, pointer)
                 except Exception:
                     log.exception("the pointer of %s at version %d wasn't kept", run.id, version)
-            return ActionResult(game=self.engine.view(run), events=outcome.events)
+            return ActionResult(game=self.engine.view(run, seat), events=outcome.events)
 
 
 class PlayAction(_ChangeRun):
@@ -310,15 +350,27 @@ class PlayAction(_ChangeRun):
     def __call__(self, player: Player, game_id: str, action: PlayerAction,
                  expected_version: int | None = None, pointer: dict[str, Any] | None = None) -> ActionResult:
         """``pointer``: the player's pointer before the action, kept for watching the run again."""
-        run = owned_run(self.games, player, game_id)
+        run, seat = member_run(self.games, self.matches, player, game_id)
         if action.type == "continue":
             # (recorded only when continuing changes the run: otherwise the history would fill with no-ops)
             if run.finished or not self.engine.continues(run):
-                return ActionResult(game=self.engine.view(run), events=[])
-
-        def act() -> ActionResult:
-            return self._change(player, game_id, expected_version, lambda run: self.engine.apply(run, action),
-                                pointer=pointer)
+                return ActionResult(game=self.engine.view(run, seat), events=[])
+        if seat is None:
+            def act() -> ActionResult:
+                return self._change(player, game_id, expected_version, lambda run: self.engine.apply(run, action),
+                                    pointer=pointer)
+        else:
+            # coop: both players act on the run, on its latest version (their cards are theirs to name)
+            def act() -> ActionResult:
+                before = self.games.get(game_id).version
+                result = self._change(player, game_id, None, lambda run: self.engine.apply(run, action, seat),
+                                      pointer=pointer, seat=seat,
+                                      load=lambda: member_run(self.games, self.matches, player, game_id)[0])
+                if self.matches is not None:
+                    self.matches.record_step(game_id, CoopStep(
+                        version=result.game.version - 1 if result.game.version > before else before, seat=seat,
+                        action=action_dict(action), events=result.events, game=result.game))
+                return result
         if run.match_id is not None and self.matches is not None:
             return self.matches.play(player, run, action.type, act)
         return act()
@@ -338,14 +390,15 @@ class RunDebugCommand(_ChangeRun):
 
     def __call__(self, player: Player, game_id: str, command: dict[str, Any],
                  expected_version: int | None = None) -> ActionResult:
-        run = owned_run(self.games, player, game_id)
+        run, seat = member_run(self.games, self.matches, player, game_id)
         # (a replay may play the debug commands of the run it copies)
         if not (self.enabled or allowed(player, Permission.DEBUG_COMMANDS)) and not run.replay:
             raise DebugCommandsDisabled()
 
         def act() -> ActionResult:
-            return self._change(player, game_id, expected_version, lambda run: self.engine.apply_debug(run, command),
-                                debug=True)
+            return self._change(player, game_id, expected_version if seat is None else None,
+                                lambda run: self.engine.apply_debug(run, command, seat), debug=True, seat=seat,
+                                load=lambda: member_run(self.games, self.matches, player, game_id)[0])
         if run.match_id is not None and self.matches is not None:
             return self.matches.play(player, run, "debug", act)  # (the match catches up after it)
         return act()
@@ -478,6 +531,8 @@ class UseCases:
     start_match: StartMatch
     vote_blind: VoteBlind
     leave_match: LeaveMatch
+    set_selection: SetSelection
+    coop_steps: GetSteps
 
 
 __all__ = ["Authenticate", "CreateGame", "DeleteGame", "GetCatalog", "GetGame", "GetGameSummary", "GetGlobalStats",
