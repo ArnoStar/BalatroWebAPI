@@ -289,8 +289,8 @@ def test_a_finished_match_has_its_summary_history_and_stats(app):
     assert entry["result"]["you_won"] and entry["runs"] == [a["run_id"], b["run_id"]] and entry["summary"] == s
     st = call(app, "ann", "GET", "/matches/stats")
     assert st["pvp"]["played"] == 1 and st["pvp"]["won"] == 1 and st["pvp"]["opponent_left"] == 1
-    assert st["pvp"]["streak"] == 1 and st["rivals"] == [{"name": "bob", "played": 1, "won": 1, "lost": 0,
-                                                          "best_ante": 0}]
+    assert st["pvp"]["streak"] == 1 and st["rivals"] == [{"id": "local:bob", "name": "bob", "played": 1, "won": 1,
+                                                          "lost": 0, "best_ante": 0}]
     assert call(app, "bob", "GET", "/matches/stats")["pvp"]["gave_up"] == 1
     assert call(app, "cy", "GET", "/matches/history")["matches"] == []
     # a profile shows them

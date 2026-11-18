@@ -980,6 +980,7 @@ class MatchPlayerView:
     you: bool
     host: bool
     left: bool = False  # left the match (it is lost)
+    id: str | None = None  # their player id (their profile: GET /players/{id})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1212,6 +1213,7 @@ class CoopStats:
 class MatchOpponentStats:
     """The players someone played with most (PvP: against; coop: with)."""
 
+    id: str  # their player id
     name: str | None
     played: int
     won: int = 0  # PvP: matches the player won against them

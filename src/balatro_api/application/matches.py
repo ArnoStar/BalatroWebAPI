@@ -310,7 +310,7 @@ class Matches:
             status=match.status.value, seat=seat, host=match.host == player_id,
             settings=MatchSettingsView(deck=s.deck, stake=s.stake, seed=s.seed, timer=s.timer),
             players=[MatchPlayerView(seat=i, name=p.name, you=p.id == player_id, host=p.id == match.host,
-                                     left=p.left) for i, p in enumerate(match.players)],
+                                     left=p.left, id=p.id) for i, p in enumerate(match.players)],
             run_id=me.run_id, run_version=run_version, pvp=pvp, result=result, server_time=self.clock.now(),
             coop=coop, summary=summary_view(match), rematch=rematch, emotes=self.recent_emotes(match.id))
 
@@ -399,7 +399,7 @@ class Matches:
             settings=MatchSettingsView(deck=s.deck, stake=s.stake, seed=s.seed, timer=s.timer), seed=match.seed,
             created_at=match.created_at, finished_at=match.finished_at, seat=seat,
             players=[MatchPlayerView(seat=i, name=p.name, you=p.id == player_id, host=p.id == match.host,
-                                     left=p.left) for i, p in enumerate(match.players)],
+                                     left=p.left, id=p.id) for i, p in enumerate(match.players)],
             result=MatchResultView(winner=match.winner, you_won=match.winner == seat, reason=match.result or ""),
             summary=summary_view(match), runs=[p.run_id for p in match.players])
 
@@ -472,7 +472,7 @@ def multiplayer_stats(matches: Sequence[Match], player_id: str) -> MultiplayerSt
             pvp["biggest_hit"] = max(pvp["biggest_hit"], int(me.get("biggest_hit") or 0))
             pvp["best_ante"] = max(pvp["best_ante"], ante)
             for o in others:
-                r = rivals.setdefault(o.id, {"name": o.name, "played": 0, "won": 0, "lost": 0})
+                r = rivals.setdefault(o.id, {"id": o.id, "name": o.name, "played": 0, "won": 0, "lost": 0})
                 r["name"] = o.name or r["name"]
                 r["played"] += 1
                 r["won"] += m.winner == seat
@@ -487,7 +487,7 @@ def multiplayer_stats(matches: Sequence[Match], player_id: str) -> MultiplayerSt
             if num(me.get("best_hand")) > coop["best_hand"]:
                 coop["best_hand"], coop["best_hand_name"] = num(me.get("best_hand")), me.get("best_hand_name")
             for o in others:
-                r = partners.setdefault(o.id, {"name": o.name, "played": 0, "best_ante": 0})
+                r = partners.setdefault(o.id, {"id": o.id, "name": o.name, "played": 0, "best_ante": 0})
                 r["name"] = o.name or r["name"]
                 r["played"] += 1
                 r["best_ante"] = max(r["best_ante"], ante)
