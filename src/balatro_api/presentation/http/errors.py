@@ -24,10 +24,15 @@ from balatro_api.domain import (
     IllegalAction,
     InAnotherMatch,
     InvalidGameSettings,
+    InvalidMod,
     Locked,
     MatchFull,
     MatchNotFound,
     MatchStarted,
+    ModForbidden,
+    ModIdTaken,
+    ModNotFound,
+    ModVersionExists,
     NotMatchHost,
     VersionConflict,
 )
@@ -38,6 +43,11 @@ STATUS: list[tuple[type[DomainError], int]] = [
     (GameNotFound, 404),
     (PlayerNotFound, 404),
     (MatchNotFound, 404),  # (and a match the player isn't in)
+    (ModNotFound, 404),
+    (InvalidMod, 422),  # with ``errors``: each with its place in the package
+    (ModIdTaken, 409),
+    (ModVersionExists, 409),
+    (ModForbidden, 403),
     (MatchFull, 409),
     (MatchStarted, 409),
     (InAnotherMatch, 409),
@@ -71,6 +81,8 @@ def install(app: FastAPI) -> None:
             extra = {"expected_version": exc.expected, "current_version": exc.actual}
         elif isinstance(exc, InAnotherMatch):
             extra = {"match_id": exc.match_id}
+        elif isinstance(exc, InvalidMod):
+            extra = {"errors": exc.errors}
         headers = {"WWW-Authenticate": 'Bearer error="invalid_token"'} if isinstance(exc, NotAuthenticated) else None
         return problem(status, exc.code, exc.message, headers, **extra)
 

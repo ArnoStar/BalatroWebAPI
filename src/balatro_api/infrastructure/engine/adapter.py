@@ -22,6 +22,7 @@ import balatro
 from balatro import DECK_NAMES, Game, Profile
 from balatro.data import load
 from balatro.mods import pvp as pvp_rules
+from balatro.mods.content import ContentMod, ModError, extend_data
 from balatro.mods.coop import Coop
 from balatro.mods.pvp import PvP
 from balatro.rng import SEED_ALPHABET, normalize_seed
@@ -31,6 +32,7 @@ from balatro_api.application.dto import (
     CollectionView,
     CoopDecksView,
     CoopDeckView,
+    CreativeCommand,
     GameView,
     HandPreview,
     LegalAction,
@@ -45,15 +47,17 @@ from balatro_api.domain import (
     GameSettings,
     IllegalAction,
     InvalidGameSettings,
+    InvalidMod,
     Progress,
     Run,
     RunStats,
     RunSummary,
 )
 
+from . import mods as mod_checks
 from . import presenter, progress
 from .catalog import build_catalog
-from .commands import from_command, legal_actions, to_command
+from .commands import creative_command, from_command, legal_actions, to_command
 
 DEBUG_COMMANDS = ("cheat", "add_joker", "add_tag", "add_voucher")
 
@@ -80,8 +84,22 @@ class BalatroEngine:
     def random_seed(self) -> str:
         return "".join(random.SystemRandom().choice(SEED_ALPHABET) for _ in range(8))
 
-    def check_settings(self, settings: GameSettings) -> GameSettings:
+    @staticmethod
+    def _content(settings: GameSettings, mod_packages: dict[str, dict[str, Any]] | None) -> list[dict[str, Any]]:
+        packages = mod_packages or {}
+        missing = [m.id for m in settings.mods if m.hash not in packages]
+        if missing:
+            raise InvalidGameSettings(f"the package of the mod {missing[0]!r} is missing")
+        return [packages[m.hash] for m in settings.mods]
+
+    def check_settings(self, settings: GameSettings,
+                       mod_packages: dict[str, dict[str, Any]] | None = None) -> GameSettings:
         data = load()
+        if settings.mods:
+            try:
+                data = extend_data(data, [ContentMod(p) for p in self._content(settings, mod_packages)])
+            except ModError as e:
+                raise InvalidMod(e.errors, e.mod_id) from None
         deck, stake = settings.deck, settings.stake
         if settings.challenge is not None:
             try:
@@ -95,13 +113,17 @@ class BalatroEngine:
             if deck not in {c.key for c in data.P_CENTER_POOLS["Back"]}:
                 raise InvalidGameSettings(f"unknown deck {settings.deck!r}")
         return GameSettings(seed=normalize_seed(settings.seed), deck=deck, stake=stake, challenge=settings.challenge,
-                            game_speed=settings.game_speed, seeded=settings.seeded, mode=settings.mode)
+                            game_speed=settings.game_speed, seeded=settings.seeded, mode=settings.mode,
+                            mods=settings.mods)
 
     # ------------------------------------------------------------ games
-    @staticmethod
-    def _new_game(s: GameSettings, start_profile: dict[str, Any] | None) -> Game:
+    @classmethod
+    def _new_game(cls, s: GameSettings, start_profile: dict[str, Any] | None,
+                  mod_packages: dict[str, dict[str, Any]] | None = None) -> Game:
         # a run from before progress was kept: fully unlocked, and played as the engine played every run then
-        mods = [s.mode] if s.mode else None  # a multiplayer mode's rules (the engine's mods)
+        mods: list[Any] | None = [s.mode] if s.mode else None  # a multiplayer mode's rules (the engine's mods)
+        if s.mods:  # content mods (their packages, in the run's order)
+            mods = (mods or []) + cls._content(s, mod_packages)
         if start_profile is None:
             return Game(s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
                         mods=mods).start_run()
@@ -109,7 +131,7 @@ class BalatroEngine:
                     profile=Profile.from_json(start_profile), seeded=s.seeded, mods=mods).start_run()
 
     def _replay(self, run: Run) -> Game:
-        G = self._new_game(run.settings, run.start_profile)
+        G = self._new_game(run.settings, run.start_profile, run.mod_packages)
         for i, c in enumerate(run.commands):
             try:
                 G.do(c.as_dict())
@@ -142,8 +164,9 @@ class BalatroEngine:
                 self._put(run.id, run.version, G)
             yield G
 
-    def start(self, run_id: str, settings: GameSettings, start_profile: dict[str, Any] | None = None) -> Progress:
-        G = self._new_game(settings, start_profile)
+    def start(self, run_id: str, settings: GameSettings, start_profile: dict[str, Any] | None = None,
+              mod_packages: dict[str, dict[str, Any]] | None = None) -> Progress:
+        G = self._new_game(settings, start_profile, mod_packages)
         self._put(run_id, 0, G)
         return presenter.progress(G)
 
@@ -246,6 +269,21 @@ class BalatroEngine:
             copy = G.clone()
         return self._play(copy, cmd)
 
+    def apply_creative(self, run: Run, command: CreativeCommand) -> Outcome:
+        with self._game(run) as G:
+            copy = G.clone()
+        return self._play(copy, creative_command(copy, command))
+
+    # ------------------------------------------------------------ mods
+    def check_mod(self, package: dict[str, Any], play: bool = True) -> list[str]:
+        return mod_checks.check(package, play)
+
+    def mod_summary(self, package: dict[str, Any]) -> dict[str, Any]:
+        return mod_checks.summary(package)
+
+    def official_mods(self) -> list[dict[str, Any]]:
+        return mod_checks.official()
+
     def continues(self, run: Run) -> bool:
         """Whether continuing the run from the main menu changes it (it can unlock Throwback)."""
         with self._game(run) as G:
@@ -256,7 +294,7 @@ class BalatroEngine:
 
     def replay_steps(self, run: Run) -> list[dict[str, Any]]:
         """The run's commands as the player actions they were (cards by id), for a replay."""
-        G = self._new_game(run.settings, run.start_profile)
+        G = self._new_game(run.settings, run.start_profile, run.mod_packages)
         steps: list[dict[str, Any]] = []
         for i, c in enumerate(run.commands):
             cmd = c.as_dict()

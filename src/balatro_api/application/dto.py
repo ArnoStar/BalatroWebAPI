@@ -34,6 +34,7 @@ ActionType = Literal[
     "use", "sell", "move",
     "pick", "skip_pack",
     "continue",
+    "creative",  # (a legal action only: a run with creative mode; POST /games/{id}/creative)
 ]
 
 
@@ -52,12 +53,46 @@ class PlayerAction:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ModChoice:
+    """A mod to play a run with: a package (the mod's JSON, e.g. imported from a file), or a
+    published mod by ``id`` (its latest version, or ``version``), or a package the server has by ``hash``."""
+
+    package: dict[str, Any] | None = None
+    id: str | None = None
+    version: str | None = None
+    hash: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
 class NewGame:
     seed: str | None = None  # None: a random seed, as in an unseeded run
     deck: str = "b_red"
     stake: int = 1
     challenge: str | None = None
     game_speed: float = 1.0
+    mods: tuple[ModChoice, ...] = ()  # content mods (the run then doesn't count, nor unlock anything)
+
+
+@dataclass(frozen=True, kw_only=True)
+class CreativeCommand:
+    """A creative mode change (a run with a creative mod): see BalatroEngine's docs/mods.md.
+    ``card``: the card ``edit`` and ``remove`` act on, by id (a joker, a consumable or a hand card)."""
+
+    op: Literal["set", "level", "add", "add_card", "edit", "remove", "boss", "win"]
+    what: str | None = None
+    value: Number | None = None
+    hand: str | None = None
+    key: str | None = None
+    card: int | None = None
+    edition: str | None = None
+    seal: str | None = None
+    enhancement: str | None = None
+    rank: str | None = None
+    suit: str | None = None
+    to: Literal["hand", "deck"] | None = None
+    eternal: bool | None = None
+    perishable: bool | None = None
+    rental: bool | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -73,6 +108,8 @@ class ImportedRun:
     commands: tuple[dict[str, Any], ...] = ()
     seeded: bool = True  # the player chose the seed (a history before progress was kept: true)
     start_profile: dict[str, Any] | None = None  # the progress the run started from (HistoryView.start_profile)
+    mods: tuple[dict[str, Any], ...] = ()  # the history's settings.mods (ModRefView)
+    mod_packages: dict[str, dict[str, Any]] | None = None  # the history's packages, by hash
 
 
 # ------------------------------------------------------------------ cards
@@ -266,6 +303,17 @@ class LegalAction:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ModRefView:
+    """A content mod a run is played with: its package is ``GET /mods/packages/{hash}``."""
+
+    id: str
+    version: str
+    hash: str
+    name: str = ""
+    creative: bool = False  # creative mode: POST /games/{id}/creative
+
+
+@dataclass(frozen=True, kw_only=True)
 class SettingsView:
     seed: str
     deck: str
@@ -274,6 +322,7 @@ class SettingsView:
     game_speed: float
     seeded: bool = False  # the player chose the seed: the run doesn't count for statistics
     mode: str | None = None  # a multiplayer run's mode ("pvp"), with its rules; None: the game's own rules
+    mods: list[ModRefView] = field(default_factory=list)  # content mods: the run doesn't count
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -381,6 +430,8 @@ class HistoryView:
     # the player's progress when the run started, which decides the pools (null: a run from before progress
     # was kept, played fully unlocked); a rebuild passes it back
     start_profile: dict[str, Any] | None = None
+    # the logic of the run's mods (settings.mods), by hash: a rebuild passes them back
+    mod_packages: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------ feedback
@@ -1241,3 +1292,58 @@ class CoopDeckView:
 @dataclass(frozen=True, kw_only=True)
 class CoopDecksView:
     seats: list[CoopDeckView]
+
+
+# ------------------------------------------------------------------ mods
+@dataclass(frozen=True, kw_only=True)
+class ModCheck:
+    """What the engine says of a package: ``valid``, and if not, ``errors`` (each with its place in the
+    package, ``jokers[0].effects[1].if: unknown name 'cardd'``)."""
+
+    valid: bool
+    errors: list[str]
+    id: str | None = None
+    version: str | None = None
+    name: str | None = None
+    hash: str | None = None  # the package's content hash
+    summary: dict[str, Any] = field(default_factory=dict)  # how many jokers, decks ... it has; creative mode
+    size: int = 0  # bytes
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModVersionView:
+    version: str
+    hash: str
+    created_at: datetime
+    size: int = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModSummaryView:
+    """A mod of the registry, as the browser lists it."""
+
+    id: str
+    name: str
+    version: str  # the latest
+    hash: str  # the latest version's package
+    description: str
+    tags: list[str]
+    author: str | None  # the publisher's display name ("Balatro" for the official mods)
+    official: bool
+    installs: int  # players who installed it
+    summary: dict[str, Any]  # jokers, consumables, vouchers, decks, blinds, rules, creative
+    created_at: datetime
+    updated_at: datetime
+    loc: dict[str, Any] = field(default_factory=dict)  # translations of name and description
+    yours: bool = False  # the caller published it
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModDetailView(ModSummaryView):
+    versions: list[ModVersionView] = field(default_factory=list)  # newest first
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModListView:
+    items: list[ModSummaryView]
+    total: int

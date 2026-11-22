@@ -17,6 +17,22 @@ from .match import (
     NotMatchHost,
     WaitingForOpponent,
 )
+from .mods import (
+    MAX_RUN_MODS,
+    MOD_SORTS,
+    OFFICIAL,
+    InvalidMod,
+    ModForbidden,
+    ModIdTaken,
+    ModNotFound,
+    ModRecord,
+    ModRef,
+    ModVersion,
+    ModVersionExists,
+    logic,
+    package_hash,
+    version_key,
+)
 from .run import (
     ANONYMOUS_PLAYER,
     GAME_SPEEDS,
@@ -33,6 +49,20 @@ from .run import (
 from .stats import CAREER_STATS, JokerUsage, RunStats
 
 __all__ = [
+    "MAX_RUN_MODS",
+    "MOD_SORTS",
+    "OFFICIAL",
+    "InvalidMod",
+    "ModForbidden",
+    "ModIdTaken",
+    "ModNotFound",
+    "ModRecord",
+    "ModRef",
+    "ModVersion",
+    "ModVersionExists",
+    "logic",
+    "package_hash",
+    "version_key",
     "ANONYMOUS_PLAYER",
     "BLIND_CHOICES",
     "EMOTES",

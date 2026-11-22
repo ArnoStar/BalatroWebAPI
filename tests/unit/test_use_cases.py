@@ -45,11 +45,25 @@ class FakeEngine:
     def random_seed(self) -> str:
         return "RANDOM12"
 
-    def check_settings(self, settings: GameSettings) -> GameSettings:
+    def check_settings(self, settings: GameSettings, mod_packages: dict[str, Any] | None = None) -> GameSettings:
         return settings
 
-    def start(self, run_id: str, settings: GameSettings, start_profile: dict[str, Any] | None = None) -> Progress:
+    def start(self, run_id: str, settings: GameSettings, start_profile: dict[str, Any] | None = None,
+              mod_packages: dict[str, Any] | None = None) -> Progress:
+        self.started_with = mod_packages
         return START
+
+    def check_mod(self, package: dict[str, Any], play: bool = True) -> list[str]:
+        return [] if package.get("format") == 1 and "id" in package else ["format: must be 1"]
+
+    def mod_summary(self, package: dict[str, Any]) -> dict[str, Any]:
+        return {"jokers": len(package.get("jokers", []))}
+
+    def official_mods(self) -> list[dict[str, Any]]:
+        return []
+
+    def apply_creative(self, run: Run, command: Any) -> Outcome:
+        return Outcome(Command({"cmd": "creative", "op": command.op}), START, RunStats(), [], object())
 
     def player_progress(self, runs: Any) -> dict[str, Any]:
         return {"unlocked": []}

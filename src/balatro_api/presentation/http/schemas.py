@@ -7,9 +7,11 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from balatro_api.application.dto import (
+    CreativeCommand,
     EmoteName,
     ImportedRun,
     MatchSettingsChange,
+    ModChoice,
     NewGame,
     NewMatch,
     PlayerAction,
@@ -21,6 +23,21 @@ Version = Annotated[int | None, Field(
     description="The game version the action is meant for (GameView.version). If the game has moved on, the "
                 "action is refused with 409 version_conflict instead of being applied to another state.")]
 CardId = Annotated[int, Field(description="A card id (CardView.id)")]
+
+
+class ModChoiceRequest(BaseModel):
+    """A mod to play the run with: ``package`` (the mod's JSON, e.g. from a file; the server checks and keeps
+    it), or a published mod's ``id`` (its latest version, or ``version``), or a kept package's ``hash``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    package: dict[str, Any] | None = None
+    id: str | None = Field(None, max_length=32)
+    version: str | None = Field(None, max_length=20)
+    hash: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
+
+    def to_dto(self) -> ModChoice:
+        return ModChoice(package=self.package, id=self.id, version=self.version, hash=self.hash)
 
 
 class NewGameRequest(BaseModel):
@@ -35,10 +52,14 @@ class NewGameRequest(BaseModel):
         1, json_schema_extra={"enum": [0.5, 1, 2, 4]},
         description="The game's speed setting: 0.5, 1, 2 or 4. It decides when animated effects land, which settles "
                     "a few timing races in the game; the default matches the game's default.")
+    mods: list[ModChoiceRequest] = Field(
+        default_factory=list, max_length=16,
+        description="Content mods to play with (a mod's deck is then a valid deck). The run doesn't count for "
+                    "statistics and unlocks nothing. An invalid package is 422 invalid_mod, with its errors.")
 
     def to_dto(self) -> NewGame:
         return NewGame(seed=self.seed, deck=self.deck, stake=self.stake, challenge=self.challenge,
-                       game_speed=float(self.game_speed))
+                       game_speed=float(self.game_speed), mods=tuple(m.to_dto() for m in self.mods))
 
 
 PointerEntry = Annotated[list[int | float | Annotated[str, Field(max_length=16)]], Field(min_length=2, max_length=24)]
@@ -187,6 +208,7 @@ class ImportSettings(BaseModel):
     challenge: str | None = None
     game_speed: float = Field(1, json_schema_extra={"enum": [0.5, 1, 2, 4]})
     seeded: bool = True
+    mods: list[dict[str, Any]] = Field(default_factory=list, max_length=16)
 
 
 class ImportGameRequest(BaseModel):
@@ -199,6 +221,7 @@ class ImportGameRequest(BaseModel):
     commands: list[dict[str, Any]] = Field(default_factory=list, max_length=20000,
                                            description="engine commands, as in a history (indices into the areas)")
     start_profile: dict[str, Any] | None = Field(None, description="the history's start_profile")
+    mod_packages: dict[str, dict[str, Any]] | None = Field(None, description="the history's mod_packages")
 
     def to_dto(self) -> ImportedRun:
         s = self.settings
@@ -206,7 +229,52 @@ class ImportGameRequest(BaseModel):
         return ImportedRun(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge,
                            game_speed=float(s.game_speed), commands=tuple(self.commands),
                            seeded=s.seeded if self.start_profile is not None else True,
-                           start_profile=self.start_profile)
+                           start_profile=self.start_profile, mods=tuple(s.mods), mod_packages=self.mod_packages)
+
+
+class CreativeRequest(BaseModel):
+    """A creative mode change (a run played with a creative mod, its ``settings.mods`` say so). ``op``:
+
+    - ``set``: ``what`` (money, hands, discards, hand_size, joker_slots, consumable_slots, ante, round_chips,
+      reroll_cost, interest_cap) to ``value``;
+    - ``level``: the poker ``hand``'s level to ``value``;
+    - ``add``: the card ``key`` (a joker or consumable, with ``edition``, ``eternal``, ``perishable``,
+      ``rental``; a voucher, redeemed; a tag) — the game's or a mod's;
+    - ``add_card``: a playing card (``rank``, ``suit``, ``enhancement``, ``edition``, ``seal``) ``to`` the
+      hand or the deck;
+    - ``edit``: the ``card`` (a joker, consumable or hand card): ``edition`` (``none`` removes it), ``seal``,
+      ``enhancement``, ``rank`` (or ``up``/``down``), ``suit``, ``eternal``, ``perishable``, ``rental``;
+    - ``remove``: the ``card``; ``boss``: the ante's boss is ``key`` (at the blind select); ``win``: the round
+      is won now.
+
+    Each goes through the game's own functions, and is recorded like an action (the run replays with it)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    op: Literal["set", "level", "add", "add_card", "edit", "remove", "boss", "win"]
+    what: Literal["money", "hands", "discards", "hand_size", "joker_slots", "consumable_slots", "ante",
+                  "round_chips", "reroll_cost", "interest_cap"] | None = None
+    value: float | None = None
+    hand: str | None = Field(None, max_length=32)
+    key: str | None = Field(None, max_length=64)
+    card: CardId | None = None
+    edition: Literal["foil", "holo", "polychrome", "negative", "none"] | None = None
+    seal: Literal["Gold", "Red", "Blue", "Purple", "none"] | None = None
+    enhancement: str | None = Field(None, max_length=32)
+    rank: str | None = Field(None, max_length=8)
+    suit: Literal["Spades", "Hearts", "Clubs", "Diamonds"] | None = None
+    to: Literal["hand", "deck"] | None = None
+    eternal: bool | None = None
+    perishable: bool | None = None
+    rental: bool | None = None
+    expected_version: Version = None
+
+    def to_dto(self) -> CreativeCommand:
+        value = None if self.value is None else (int(self.value) if self.value == int(self.value) else self.value)
+        return CreativeCommand(op=self.op, what=self.what, value=value, hand=self.hand, key=self.key,
+                               card=self.card, edition=self.edition, seal=self.seal, enhancement=self.enhancement,
+                               rank=self.rank, suit=self.suit, to=self.to, eternal=self.eternal,
+                               perishable=self.perishable, rental=self.rental)
 
 
 class PlayerSettingsRequest(BaseModel):

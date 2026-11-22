@@ -9,12 +9,24 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
-from balatro_api.domain import Command, GameSettings, Match, Phase, Progress, Run, RunStats, RunSummary
+from balatro_api.domain import (
+    Command,
+    GameSettings,
+    Match,
+    ModRecord,
+    ModVersion,
+    Phase,
+    Progress,
+    Run,
+    RunStats,
+    RunSummary,
+)
 
 from .dto import (
     Catalog,
     CollectionView,
     CoopDecksView,
+    CreativeCommand,
     FeedbackEvent,
     GameView,
     GlobalStats,
@@ -77,13 +89,34 @@ class GameEngine(Protocol):
 
     def random_seed(self) -> str: ...
 
-    def check_settings(self, settings: GameSettings) -> GameSettings:
+    def check_settings(self, settings: GameSettings,
+                       mod_packages: dict[str, dict[str, Any]] | None = None) -> GameSettings:
         """The settings the game will actually use (seed as the game reads
-        it, a challenge's own deck and stake).  Raises InvalidGameSettings."""
+        it, a challenge's own deck and stake).  Raises InvalidGameSettings, or
+        InvalidMod when the run's mods can't be played together."""
         ...
 
-    def start(self, run_id: str, settings: GameSettings, start_profile: dict[str, Any] | None = None) -> Progress:
-        """A new run's game, from the player's progress (None: fully unlocked, as runs were before progress)."""
+    def start(self, run_id: str, settings: GameSettings, start_profile: dict[str, Any] | None = None,
+              mod_packages: dict[str, dict[str, Any]] | None = None) -> Progress:
+        """A new run's game, from the player's progress (None: fully unlocked, as runs were before progress)
+        and with its mods' packages (``settings.mods``, by hash)."""
+        ...
+
+    def check_mod(self, package: dict[str, Any]) -> list[str]:
+        """What is wrong with a mod's package (empty: it can be played): the format, then a short
+        run played with it."""
+        ...
+
+    def mod_summary(self, package: dict[str, Any]) -> dict[str, Any]:
+        """How many items of each kind the package has, its rules, whether it is creative mode."""
+        ...
+
+    def official_mods(self) -> list[dict[str, Any]]:
+        """The mods that come with the engine (the examples)."""
+        ...
+
+    def apply_creative(self, run: Run, command: CreativeCommand) -> Outcome:
+        """A creative mode change (a run with a creative mod), played like an action."""
         ...
 
     def view(self, run: Run, seat: int | None = None) -> GameView:
@@ -296,3 +329,39 @@ class Clock(Protocol):
 
 class IdGenerator(Protocol):
     def new_id(self) -> str: ...
+
+
+class ModRepository(Protocol):
+    """Mod packages, kept by content hash for good (runs replay with them), and the registry of
+    published mods."""
+
+    def put_package(self, hash: str, package: dict[str, Any], at: datetime) -> None:
+        """Keep a package (nothing happens if it is there already)."""
+        ...
+
+    def package(self, hash: str) -> dict[str, Any] | None: ...
+
+    def logic(self, hashes: Sequence[str]) -> dict[str, dict[str, Any]]:
+        """The packages without their images, by hash."""
+        ...
+
+    def get_mod(self, mod_id: str) -> ModRecord | None: ...
+
+    def save_mod(self, record: ModRecord) -> None:
+        """Add or replace a mod of the registry."""
+        ...
+
+    def add_version(self, version: ModVersion) -> None: ...
+
+    def versions(self, mod_id: str) -> builtins.list[ModVersion]:
+        """Newest first."""
+        ...
+
+    def find_mods(self, query: str | None, tag: str | None, sort: str, limit: int, offset: int,
+                  owner: str | None = None) -> tuple[builtins.list[ModRecord], int]:
+        """Listed mods matching the query (in the id, name or description) and tag, and how many match."""
+        ...
+
+    def add_install(self, mod_id: str, player_id: str, at: datetime) -> int:
+        """Count the player among the mod's installs (once); its install count."""
+        ...

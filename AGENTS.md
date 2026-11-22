@@ -52,6 +52,12 @@ which reproduces the original game exactly.
    runs (`infrastructure/engine/progress.py` adds them up with the engine's
    rules), and every run stores the profile it started from
    (`Run.start_profile`): it decides the pools, so a replay must use it.
+9. **A run's mods are part of the run.** Content mods are packages (the
+   engine's format, checked by the engine, never code run here). A run names
+   its packages by content hash (`GameSettings.mods`) and replays with
+   exactly them (`Run.mod_packages`), so a kept package is never changed or
+   deleted, even when its mod is unlisted. A run with mods doesn't count for
+   statistics or progress.
 
 ## Architecture (clean architecture)
 

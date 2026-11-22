@@ -288,3 +288,61 @@ def test_match_runs_are_not_listed(repo):
     assert [r.id for r in repo.list("p1", 10, 0)] == ["solo"]
     got = repo.get("pvp")
     assert got.match_id == "m1" and got.settings.mode == "pvp" and not got.summary().counts
+
+
+# ------------------------------------------------------------------ mods
+PKG = {"format": 1, "id": "tiny", "name": "Tiny", "version": "1.0.0", "assets": {"a": "data:image/png;base64,AA"},
+       "jokers": [{"key": "j", "name": "J"}]}
+
+
+def test_mod_packages_and_runs_with_mods(repo):
+    from balatro_api.domain import ModRef, logic, package_hash
+    h = package_hash(PKG)
+    repo.put_package(h, PKG, T0)
+    repo.put_package(h, {**PKG, "name": "changed"}, T0)  # (a package never changes)
+    assert repo.package(h) == PKG and repo.package("nope") is None
+    assert repo.logic([h, "nope"]) == {h: logic(PKG)}
+    bare = {k: v for k, v in PKG.items() if k != "assets"}
+    repo.put_package(package_hash(bare), bare, T0)
+    assert repo.package(package_hash(bare)) == bare  # (no images: none come back)
+    ref = ModRef.of(PKG)
+    settings = GameSettings(seed="ABC", mods=(ref,))
+    repo.add(make("m", settings=settings, mod_packages={h: logic(PKG)}))
+    got = repo.get("m")
+    assert got.settings.mods == (ref,) and got.mod_packages == {h: logic(PKG)}
+    assert not got.counts and [r.counts for r in repo.runs_of("p1")] == [False]
+
+
+def test_the_mod_registry(repo):
+    from balatro_api.domain import ModRecord, ModVersion
+    for i, (mod_id, tags, installs) in enumerate((("alpha", ["jokers"], 0), ("beta", ["decks", "jokers"], 5),
+                                                  ("gamma", ["rules"], 2))):
+        at = T0 + timedelta(minutes=i)
+        repo.save_mod(ModRecord(id=mod_id, owner="p1" if mod_id != "gamma" else "p2", owner_name=None,
+                                name=mod_id.title(), description=f"the {mod_id} mod", tags=tags,
+                                latest_version="1.0.0", latest_hash=f"h{i}", summary={"jokers": i},
+                                created_at=at, updated_at=at, installs=installs, loc={"ru": {"name": "x"}}))
+        repo.add_version(ModVersion(mod_id=mod_id, version="1.0.0", hash=f"h{i}", created_at=at, size=10))
+    repo.add_version(ModVersion(mod_id="alpha", version="1.1.0", hash="h9", created_at=T0 + timedelta(hours=1)))
+    assert [v.version for v in repo.versions("alpha")] == ["1.1.0", "1.0.0"]
+    assert repo.get_mod("beta").loc == {"ru": {"name": "x"}} and repo.get_mod("nope") is None
+
+    def ids(**kw):
+        found, total = repo.find_mods(kw.pop("q", None), kw.pop("tag", None), kw.pop("sort", "popular"),
+                                      kw.pop("limit", 10), kw.pop("offset", 0), **kw)
+        return [r.id for r in found], total
+    assert ids() == (["beta", "gamma", "alpha"], 3)
+    assert ids(sort="new") == (["gamma", "beta", "alpha"], 3)
+    assert ids(sort="name", limit=1, offset=1) == (["beta"], 3)
+    assert ids(tag="jokers") == (["beta", "alpha"], 2)
+    assert ids(q="GAM") == (["gamma"], 1)
+    assert ids(q="%") == ([], 0)
+    gamma = repo.get_mod("gamma")
+    gamma.listed = False
+    repo.save_mod(gamma)
+    assert ids() == (["beta", "alpha"], 2)
+    assert ids(owner="p2") == (["gamma"], 1)  # (one's own: also unlisted)
+    assert repo.add_install("alpha", "p1", T0) == 1
+    assert repo.add_install("alpha", "p1", T0) == 1
+    assert repo.add_install("alpha", "p2", T0) == 2
+    assert repo.get_mod("alpha").installs == 2

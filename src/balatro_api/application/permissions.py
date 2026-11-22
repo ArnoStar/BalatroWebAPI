@@ -17,12 +17,13 @@ class Permission(StrEnum):
     IMPORT_RUNS = "runs:import"  # POST /games/import: rebuild a run from a history (bug reports)
     UNLOCK_ALL = "progress:unlock_all"  # PATCH /players/me {all_unlocked}: new runs fully unlocked (tests)
     WATCH_ALL = "runs:watch_all"  # watch anyone's runs, also unfinished ones and private players'
+    MANAGE_MODS = "mods:manage"  # publish versions of anyone's mod, unlist any mod (moderation)
 
 
 ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
     "admin": frozenset(Permission),
     "developer": frozenset({Permission.DEBUG_COMMANDS, Permission.IMPORT_RUNS, Permission.UNLOCK_ALL,
-                            Permission.WATCH_ALL}),
+                            Permission.WATCH_ALL, Permission.MANAGE_MODS}),
     "tester": frozenset({Permission.DEBUG_COMMANDS, Permission.UNLOCK_ALL}),
 }
 
