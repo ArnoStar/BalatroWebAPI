@@ -18,6 +18,7 @@ from enum import StrEnum
 from typing import Any
 
 from .errors import GameOver, InvalidGameSettings, VersionConflict
+from .mods import MAX_RUN_MODS, ModRef
 from .stats import RunStats
 
 GAME_SPEEDS = (0.5, 1.0, 2.0, 4.0)
@@ -43,8 +44,16 @@ class GameSettings:
     seeded: bool = False
     mode: str | None = None
     """A multiplayer mode's rules (the engine's mod: "pvp"), or None for the game's own."""
+    mods: tuple[ModRef, ...] = ()
+    """The content mods the run is played with (packages, by hash)."""
 
     def __post_init__(self) -> None:
+        if len(self.mods) > MAX_RUN_MODS:
+            raise InvalidGameSettings(f"a run has at most {MAX_RUN_MODS} mods")
+        if len({m.id for m in self.mods}) != len(self.mods):
+            raise InvalidGameSettings("a mod is there twice")
+        if self.mods and self.mode is not None:
+            raise InvalidGameSettings("multiplayer runs are played without mods")
         if self.mode is not None and self.mode not in RUN_MODES:
             raise InvalidGameSettings(f"the mode is one of {', '.join(RUN_MODES)}")
         if not SEED_PATTERN.match(self.seed):
@@ -122,8 +131,9 @@ def finished(progress: Progress) -> bool:
 def counts(settings: GameSettings, debug: bool) -> bool:
     """Whether a run counts for statistics and leaderboards: as in the game,
     not when the player chose the seed or plays a challenge; nor when a debug
-    command was used, nor a multiplayer run."""
-    return not settings.seeded and settings.challenge is None and not debug and settings.mode is None
+    command was used, nor a multiplayer run, nor a run with mods."""
+    return (not settings.seeded and settings.challenge is None and not debug and settings.mode is None
+            and not settings.mods)
 
 
 @dataclass
@@ -156,11 +166,20 @@ class Run:
     part of the run like its settings.  None: a run from before progress was
     kept, played fully unlocked.  {"all": true}: played fully unlocked (a tester's
     choice)."""
+    mod_packages: dict[str, dict[str, Any]] = field(default_factory=dict)
+    """The logic of the run's mods (``settings.mods``), by hash: what the engine replays it with."""
 
     @property
     def tracks_progress(self) -> bool:
-        """The run started from the player's real progress, so it adds to it."""
-        return self.start_profile is not None and not self.start_profile.get("all") and not self.replay
+        """The run started from the player's real progress, so it adds to it (not with mods: their rules
+        aren't the game's)."""
+        return (self.start_profile is not None and not self.start_profile.get("all") and not self.replay
+                and not self.settings.mods)
+
+    @property
+    def creative(self) -> bool:
+        """One of the run's mods is creative mode."""
+        return any(m.creative for m in self.settings.mods)
 
     @property
     def finished(self) -> bool:

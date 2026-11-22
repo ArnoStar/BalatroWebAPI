@@ -14,6 +14,7 @@ together).  Never change a migration that has been released: add one.
 from __future__ import annotations
 
 import builtins
+import json
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime
@@ -41,6 +42,9 @@ from balatro_api.domain import (
     GameSettings,
     Match,
     MatchNotFound,
+    ModRecord,
+    ModRef,
+    ModVersion,
     Phase,
     Progress,
     Run,
@@ -133,12 +137,63 @@ MIGRATIONS: tuple[str, ...] = (
     CREATE INDEX matches_lobby_code ON matches (code) WHERE status = 'lobby';
     CREATE INDEX matches_players ON matches USING GIN (players);
     """,
+    # 6: content mods: a run's mods (by package hash; a run with mods doesn't count), the packages (by hash, for
+    # good), and the registry of published mods, their versions and installs
+    """
+    ALTER TABLE runs ADD COLUMN mods JSONB NOT NULL DEFAULT '[]';
+    DROP INDEX runs_counted_owner;
+    ALTER TABLE runs DROP COLUMN counted;
+    ALTER TABLE runs ADD COLUMN counted BOOLEAN
+        GENERATED ALWAYS AS (NOT seeded AND challenge IS NULL AND NOT debug AND mods = '[]'::jsonb) STORED;
+    CREATE INDEX runs_counted_owner ON runs (owner) WHERE counted;
+    CREATE TABLE mod_packages (
+        hash TEXT PRIMARY KEY,
+        mod_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        logic JSONB NOT NULL,
+        assets JSONB,
+        size INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL
+    );
+    CREATE TABLE mods (
+        id TEXT PRIMARY KEY,
+        owner TEXT NOT NULL,
+        owner_name TEXT,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        tags TEXT[] NOT NULL,
+        latest_version TEXT NOT NULL,
+        latest_hash TEXT NOT NULL,
+        summary JSONB NOT NULL,
+        loc JSONB NOT NULL,
+        official BOOLEAN NOT NULL,
+        listed BOOLEAN NOT NULL,
+        installs INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+    );
+    CREATE INDEX mods_owner ON mods (owner);
+    CREATE TABLE mod_versions (
+        mod_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (mod_id, version)
+    );
+    CREATE TABLE mod_installs (
+        mod_id TEXT NOT NULL,
+        player TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (mod_id, player)
+    );
+    """,
 )
 
 RUN_COLUMNS = ("id", "owner", "seed", "seeded", "deck", "stake", "challenge", "game_speed", "engine_version", "version",
                "phase", "ante", "round", "dollars", "won", "debug", "best_hand", "furthest_ante", "furthest_round",
                "most_money", "boss_streak", "stats", "created_at", "updated_at", "replay", "tracks_progress", "mode",
-               "match_id")
+               "match_id", "mods")
 SELECT_RUNS = sql.SQL("SELECT {} FROM runs").format(sql.SQL(", ").join(sql.Identifier(c) for c in RUN_COLUMNS))
 BOARD_COLUMNS = {"best_hand": "best_hand", "highest_ante": "furthest_ante", "highest_round": "furthest_round",
                  "most_money": "most_money", "boss_streak": "boss_streak"}
@@ -212,7 +267,8 @@ class PostgresGameRepository:
     @staticmethod
     def _summary(row: DictRow) -> RunSummary:
         settings = GameSettings(seed=row["seed"], deck=row["deck"], stake=row["stake"], challenge=row["challenge"],
-                                game_speed=row["game_speed"], seeded=row["seeded"], mode=row["mode"])
+                                game_speed=row["game_speed"], seeded=row["seeded"], mode=row["mode"],
+                                mods=tuple(ModRef.from_json(m) for m in row["mods"] or ()))
         progress = Progress(phase=Phase(row["phase"]), ante=row["ante"], round=row["round"], dollars=row["dollars"],
                             won=row["won"])
         stats = RunStats.from_json(row["stats"], best_hand=row["best_hand"], furthest_ante=row["furthest_ante"],
@@ -251,7 +307,7 @@ class PostgresGameRepository:
         values = {"id": run.id, "owner": run.owner, "seed": s.seed, "seeded": s.seeded, "deck": s.deck,
                   "stake": s.stake, "challenge": s.challenge, "game_speed": s.game_speed,
                   "engine_version": run.engine_version, "created_at": run.created_at, "replay": run.replay,
-                  "mode": s.mode, "match_id": run.match_id,
+                  "mode": s.mode, "match_id": run.match_id, "mods": Jsonb([m.to_json() for m in s.mods]),
                   "start_profile": Jsonb(run.start_profile) if run.start_profile is not None else None,
                   "tracks_progress": run.tracks_progress, **self._cached(run)}
         query = sql.SQL("INSERT INTO runs ({}) VALUES ({})").format(
@@ -271,11 +327,16 @@ class PostgresGameRepository:
                 "SELECT command FROM commands WHERE run_id = %s ORDER BY seq", (run_id,))]
             start = conn.execute("SELECT start_profile FROM runs WHERE id = %s", (run_id,)).fetchone()
             name = conn.execute("SELECT name FROM players WHERE id = %s", (row["owner"],)).fetchone()
-        s = self._summary(row)
+            s = self._summary(row)
+            packages: dict[str, dict[str, Any]] = {}
+            if s.settings.mods:
+                packages = {r["hash"]: r["logic"] for r in conn.execute(
+                    "SELECT hash, logic FROM mod_packages WHERE hash = ANY(%s)", ([m.hash for m in s.settings.mods],))}
         return Run(id=s.id, settings=s.settings, engine_version=row["engine_version"], progress=s.progress,
                    created_at=s.created_at, updated_at=s.updated_at, commands=commands, owner=s.owner,
                    owner_name=name["name"] if name else None, stats=s.stats, debug=s.debug, replay=s.replay,
-                   match_id=row["match_id"], start_profile=start["start_profile"] if start else None)
+                   match_id=row["match_id"], start_profile=start["start_profile"] if start else None,
+                   mod_packages=packages)
 
     def save(self, run: Run, expected_version: int) -> None:
         values = self._cached(run)
@@ -487,3 +548,102 @@ class PostgresGameRepository:
             stakes=[StakePopularity(stake=r["stake"], runs=r["runs"], wins=r["wins"]) for r in stakes],
             jokers=[JokerPopularity(key=r["key"], runs=r["runs"], win_runs=r["win_runs"]) for r in jokers],
             hands=[UsageCount(key=r["key"], count=int(r["count"])) for r in hand_rows])
+
+    # ------------------------------------------------------------ mods
+    MOD_ORDER = {"popular": "installs DESC, updated_at DESC, id", "new": "created_at DESC, id",
+                 "updated": "updated_at DESC, id", "name": "lower(name), id"}
+
+    def put_package(self, hash: str, package: dict[str, Any], at: datetime) -> None:
+        logic = {k: v for k, v in package.items() if k != "assets"}
+        assets = package.get("assets")
+        size = len(json.dumps(package, ensure_ascii=False).encode())
+        with self._tx() as conn:
+            conn.execute("INSERT INTO mod_packages (hash, mod_id, version, logic, assets, size, created_at) "
+                         "VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (hash) DO NOTHING",
+                         (hash, str(package.get("id")), str(package.get("version")), Jsonb(logic),
+                          Jsonb(assets) if "assets" in package else None, size, at))
+
+    def package(self, hash: str) -> dict[str, Any] | None:
+        with self._tx() as conn:
+            row = conn.execute("SELECT logic, assets FROM mod_packages WHERE hash = %s", (hash,)).fetchone()
+        if row is None:
+            return None
+        out: dict[str, Any] = dict(row["logic"])
+        if row["assets"] is not None:
+            out["assets"] = row["assets"]
+        return out
+
+    def logic(self, hashes: Sequence[str]) -> dict[str, dict[str, Any]]:
+        if not hashes:
+            return {}
+        with self._tx() as conn:
+            return {r["hash"]: r["logic"] for r in conn.execute(
+                "SELECT hash, logic FROM mod_packages WHERE hash = ANY(%s)", (list(hashes),))}
+
+    @staticmethod
+    def _mod(row: DictRow) -> ModRecord:
+        return ModRecord(id=row["id"], owner=row["owner"], owner_name=row["owner_name"], name=row["name"],
+                         description=row["description"], tags=list(row["tags"]),
+                         latest_version=row["latest_version"], latest_hash=row["latest_hash"],
+                         summary=row["summary"], created_at=row["created_at"], updated_at=row["updated_at"],
+                         official=row["official"], listed=row["listed"], installs=row["installs"], loc=row["loc"])
+
+    def get_mod(self, mod_id: str) -> ModRecord | None:
+        with self._tx() as conn:
+            row = conn.execute("SELECT * FROM mods WHERE id = %s", (mod_id,)).fetchone()
+        return self._mod(row) if row is not None else None
+
+    def save_mod(self, record: ModRecord) -> None:
+        r = record
+        with self._tx() as conn:
+            conn.execute(
+                "INSERT INTO mods (id, owner, owner_name, name, description, tags, latest_version, latest_hash, "
+                "summary, loc, official, listed, installs, created_at, updated_at) VALUES "
+                "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET "
+                "owner = EXCLUDED.owner, owner_name = EXCLUDED.owner_name, name = EXCLUDED.name, "
+                "description = EXCLUDED.description, tags = EXCLUDED.tags, latest_version = EXCLUDED.latest_version, "
+                "latest_hash = EXCLUDED.latest_hash, summary = EXCLUDED.summary, loc = EXCLUDED.loc, "
+                "official = EXCLUDED.official, listed = EXCLUDED.listed, updated_at = EXCLUDED.updated_at",
+                (r.id, r.owner, r.owner_name, r.name, r.description, list(r.tags), r.latest_version, r.latest_hash,
+                 Jsonb(r.summary), Jsonb(r.loc), r.official, r.listed, r.installs, r.created_at, r.updated_at))
+
+    def add_version(self, version: ModVersion) -> None:
+        v = version
+        with self._tx() as conn:
+            conn.execute("INSERT INTO mod_versions (mod_id, version, hash, size, created_at) VALUES "
+                         "(%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                         (v.mod_id, v.version, v.hash, v.size, v.created_at))
+
+    def versions(self, mod_id: str) -> builtins.list[ModVersion]:
+        with self._tx() as conn:
+            rows = conn.execute("SELECT * FROM mod_versions WHERE mod_id = %s ORDER BY created_at DESC",
+                                (mod_id,)).fetchall()
+        return [ModVersion(mod_id=r["mod_id"], version=r["version"], hash=r["hash"], created_at=r["created_at"],
+                           size=r["size"]) for r in rows]
+
+    def find_mods(self, query: str | None, tag: str | None, sort: str, limit: int, offset: int,
+                  owner: str | None = None) -> tuple[builtins.list[ModRecord], int]:
+        where = ["owner = %(owner)s" if owner is not None else "listed"]
+        params: dict[str, Any] = {"owner": owner, "limit": limit, "offset": offset}
+        if query:
+            where.append("(id ILIKE %(q)s OR name ILIKE %(q)s OR description ILIKE %(q)s)")
+            params["q"] = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        if tag:
+            where.append("%(tag)s = ANY(tags)")
+            params["tag"] = tag
+        order = self.MOD_ORDER.get(sort, self.MOD_ORDER["popular"])
+        query_sql = sql.SQL("SELECT *, count(*) OVER () AS total FROM mods WHERE {} ORDER BY {} "
+                            "LIMIT %(limit)s OFFSET %(offset)s").format(sql.SQL(" AND ").join(map(sql.SQL, where)),
+                                                                        sql.SQL(order))
+        with self._tx() as conn:
+            rows = conn.execute(query_sql, params).fetchall()
+        return [self._mod(r) for r in rows], (rows[0]["total"] if rows else 0)
+
+    def add_install(self, mod_id: str, player_id: str, at: datetime) -> int:
+        with self._tx() as conn:
+            added = conn.execute("INSERT INTO mod_installs (mod_id, player, created_at) VALUES (%s, %s, %s) "
+                                 "ON CONFLICT DO NOTHING", (mod_id, player_id, at)).rowcount
+            if added:
+                conn.execute("UPDATE mods SET installs = installs + 1 WHERE id = %s", (mod_id,))
+            row = conn.execute("SELECT installs FROM mods WHERE id = %s", (mod_id,)).fetchone()
+        return int(row["installs"]) if row else 0

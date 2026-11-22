@@ -66,6 +66,8 @@ def check_unlocked(settings: GameSettings, p: Profile) -> None:
         if settings.challenge in ids and ids.index(settings.challenge) >= p.challenges_unlocked(len(ids)):
             raise Locked(f"the challenge {settings.challenge!r} is locked")
         return
+    if settings.deck not in data.P_CENTERS:
+        return  # a mod's deck: always open, at every stake
     if not p.is_unlocked(settings.deck):
         raise Locked(f"the deck {settings.deck!r} is locked")
     if settings.stake > p.max_stake(settings.deck):

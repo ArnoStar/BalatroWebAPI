@@ -12,7 +12,7 @@ from balatro_api import __version__
 from balatro_api.application.use_cases import UseCases
 
 from . import errors, requests
-from .routes import games, matches, meta, players, stats
+from .routes import games, matches, meta, mods, players, stats
 
 DESCRIPTION = """
 Play Balatro runs over HTTP. The game logic is BalatroEngine's, which
@@ -34,7 +34,13 @@ votes, the waits, the timer, the hit points).
 
 Statistics (`/stats/me`, `/stats/global`, `/leaderboards/{board}`) count the
 runs as the game's profile does: a run whose seed the player chose, or a
-challenge, doesn't count (nor, here, a run that used debug commands).
+challenge, doesn't count (nor, here, a run that used debug commands or mods).
+
+Content mods (`/mods`): JSON packages of new jokers, consumables, vouchers,
+decks, boss blinds and rules (BalatroEngine's format), never code. Publish
+them, browse and download them, and start runs with them (`POST /games` with
+`mods`). A creative mod lets the player change their run
+(`POST /games/{id}/creative`).
 """
 
 
@@ -51,6 +57,7 @@ def create_app(use_cases: UseCases, cors_origins: Sequence[str] = ("*",)) -> Fas
     api.include_router(stats.router)
     api.include_router(players.router)
     api.include_router(matches.router)
+    api.include_router(mods.router)
     app.include_router(api)
 
     @app.get("/", include_in_schema=False)

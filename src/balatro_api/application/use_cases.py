@@ -19,13 +19,25 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from balatro_api.domain import Command, GameNotFound, GameSettings, IllegalAction, Phase, Progress, Run, RunSummary
+from balatro_api.domain import (
+    Command,
+    GameNotFound,
+    GameSettings,
+    IllegalAction,
+    InvalidGameSettings,
+    ModRef,
+    Phase,
+    Progress,
+    Run,
+    RunSummary,
+)
 
 from .dto import (
     ActionResult,
     Catalog,
     CoopDecksView,
     CoopStep,
+    CreativeCommand,
     GameSummaryView,
     GameView,
     GlobalStats,
@@ -37,6 +49,7 @@ from .dto import (
     LeaderboardName,
     LegalAction,
     MeView,
+    ModRefView,
     NewGame,
     Player,
     PlayerAction,
@@ -68,8 +81,19 @@ from .matches import (
     VoteBlind,
     multiplayer_stats,
 )
+from .mods import (
+    DownloadMod,
+    GetMod,
+    GetModPackage,
+    InstallMod,
+    ListMods,
+    ModPackages,
+    PublishMod,
+    UnlistMod,
+    ValidateMod,
+)
 from .permissions import Permission, allowed
-from .ports import Authenticator, BoardRow, Clock, GameEngine, GameRepository, IdGenerator, Outcome
+from .ports import Authenticator, BoardRow, Clock, GameEngine, GameRepository, IdGenerator, ModRepository, Outcome
 from .statistics import player_stats, score
 
 log = logging.getLogger(__name__)
@@ -95,9 +119,13 @@ def action_dict(a: PlayerAction) -> dict[str, Any]:
     return d
 
 
+def mod_views(mods: Sequence[ModRef]) -> list[ModRefView]:
+    return [ModRefView(id=m.id, version=m.version, hash=m.hash, name=m.name, creative=m.creative) for m in mods]
+
+
 def settings_view(s: GameSettings) -> SettingsView:
     return SettingsView(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
-                        seeded=s.seeded, mode=s.mode)
+                        seeded=s.seeded, mode=s.mode, mods=mod_views(s.mods))
 
 
 def owned_run(games: GameRepository, player: Player, game_id: str) -> Run:
@@ -177,23 +205,34 @@ class Authenticate:
 
 
 class CreateGame:
+    """Start a run (with content mods: ``request.mods``; it then doesn't count, nor add to the player's
+    progress)."""
+
     def __init__(self, engine: GameEngine, games: GameRepository, ids: IdGenerator, clock: Clock,
-                 debug_enabled: bool = False) -> None:
+                 debug_enabled: bool = False, mods: ModPackages | None = None) -> None:
         self.engine, self.games, self.ids, self.clock = engine, games, ids, clock
         self.debug_enabled = debug_enabled
+        self.mods = mods
 
     def __call__(self, player: Player, request: NewGame) -> GameView:
+        refs: tuple[ModRef, ...] = ()
+        packages: dict[str, Any] = {}
+        if request.mods:
+            if self.mods is None:
+                raise IllegalAction("this server plays no mods")
+            refs, packages = self.mods.resolve(player, request.mods)
         settings = self.engine.check_settings(GameSettings(
             seed=request.seed if request.seed is not None else self.engine.random_seed(),
             deck=request.deck, stake=request.stake, challenge=request.challenge, game_speed=request.game_speed,
-            seeded=request.seed is not None))
+            seeded=request.seed is not None, mods=refs), packages)
         profile = start_profile(self.engine, self.games, player, self.debug_enabled)
         self.engine.check_unlocked(settings, profile)
         run_id = self.ids.new_id()
-        progress = self.engine.start(run_id, settings, profile)
+        progress = self.engine.start(run_id, settings, profile, packages)
         now = self.clock.now()
         run = Run(id=run_id, settings=settings, engine_version=self.engine.version, progress=progress,
-                  created_at=now, updated_at=now, owner=player.id, owner_name=player.name, start_profile=profile)
+                  created_at=now, updated_at=now, owner=player.id, owner_name=player.name, start_profile=profile,
+                  mod_packages=packages)
         run.stats = self.engine.run_stats(run)
         self.games.add(run)
         return self.engine.view(run)
@@ -207,22 +246,40 @@ class ImportGame:
     runs (it is the reporter's run, seen again)."""
 
     def __init__(self, engine: GameEngine, games: GameRepository, ids: IdGenerator, clock: Clock,
-                 debug_enabled: bool, admins: Sequence[str]) -> None:
+                 debug_enabled: bool, admins: Sequence[str], mods: ModRepository | None = None) -> None:
         self.engine, self.games, self.ids, self.clock = engine, games, ids, clock
         self.debug_enabled, self.admins = debug_enabled, frozenset(admins)
+        self.mods = mods
+
+    def _packages(self, refs: Sequence[ModRef], given: dict[str, Any] | None) -> dict[str, Any]:
+        """The run's packages: the server's (by hash), else the history's."""
+        known = self.mods.logic([r.hash for r in refs]) if self.mods is not None else {}
+        out: dict[str, Any] = {}
+        for r in refs:
+            package = known.get(r.hash) or (given or {}).get(r.hash)
+            if package is None:
+                raise InvalidGameSettings(f"the history's mod {r.id} {r.version} isn't on this server: send "
+                                          "its package (mod_packages)")
+            if r.hash not in known and self.mods is not None:
+                # (another server's run: keep its package, under the run's hash, so the rebuilt run replays)
+                self.mods.put_package(r.hash, package, self.clock.now())
+            out[r.hash] = package
+        return out
 
     def __call__(self, player: Player, request: ImportedRun) -> GameView:
         if not (self.debug_enabled or player.id in self.admins or allowed(player, Permission.IMPORT_RUNS)):
             raise ImportForbidden()
+        refs = tuple(ModRef.from_json(m) for m in request.mods)
+        packages = self._packages(refs, request.mod_packages)
         settings = self.engine.check_settings(GameSettings(
             seed=request.seed, deck=request.deck, stake=request.stake, challenge=request.challenge,
-            game_speed=request.game_speed, seeded=request.seeded))
+            game_speed=request.game_speed, seeded=request.seeded, mods=refs), packages)
         now = self.clock.now()
         run = Run(id=self.ids.new_id(), settings=settings, engine_version=self.engine.version,
                   progress=Progress(Phase.BLIND_SELECT, 1, 0, 0, False),  # (replaced by the replay's)
                   created_at=now, updated_at=now,
                   commands=[Command(c) for c in request.commands], owner=player.id, owner_name=player.name,
-                  debug=True, replay=True, start_profile=request.start_profile)
+                  debug=True, replay=True, start_profile=request.start_profile, mod_packages=packages)
         try:
             run.progress, run.stats = self.engine.load(run)
         except Exception:
@@ -297,7 +354,7 @@ class GetHistory:
         run = viewable_run(self.games, player, game_id, self.matches)
         return HistoryView(id=run.id, version=run.version, engine_version=run.engine_version,
                            settings=settings_view(run.settings), commands=[c.as_dict() for c in run.commands],
-                           start_profile=run.start_profile)
+                           start_profile=run.start_profile, mod_packages=dict(run.mod_packages))
 
 
 class WatchGame:
@@ -314,11 +371,11 @@ class WatchGame:
         steps = self.engine.replay_steps(source)
         pointers = self.games.pointers(source.id)
         copy_id = self.ids.new_id()
-        progress = self.engine.start(copy_id, source.settings, source.start_profile)
+        progress = self.engine.start(copy_id, source.settings, source.start_profile, source.mod_packages)
         now = self.clock.now()
         copy = Run(id=copy_id, settings=source.settings, engine_version=self.engine.version, progress=progress,
                    created_at=now, updated_at=now, owner=player.id, owner_name=player.name, debug=True, replay=True,
-                   start_profile=source.start_profile)
+                   start_profile=source.start_profile, mod_packages=dict(source.mod_packages))
         copy.stats = self.engine.run_stats(copy)
         self.games.add(copy)
         owner = self.games.player(source.owner)
@@ -419,6 +476,18 @@ class RunDebugCommand(_ChangeRun):
         if run.match_id is not None and self.matches is not None:
             return self.matches.play(player, run, "debug", act)  # (the match catches up after it)
         return act()
+
+
+class CreativeChange(_ChangeRun):
+    """A creative mode change on one of the player's runs played with a creative mod: recorded like an
+    action, so the run replays with it (the run already doesn't count: it has mods)."""
+
+    def __call__(self, player: Player, game_id: str, command: CreativeCommand,
+                 expected_version: int | None = None) -> ActionResult:
+        run = owned_run(self.games, player, game_id)
+        if not run.creative:
+            raise IllegalAction("this run isn't played with creative mode (a creative mod)")
+        return self._change(player, game_id, expected_version, lambda run: self.engine.apply_creative(run, command))
 
 
 class GetCatalog:
@@ -579,9 +648,18 @@ class UseCases:
     send_emote: SendEmote
     match_history: GetMatchHistory
     multiplayer_stats: GetMultiplayerStats
+    creative: CreativeChange
+    validate_mod: ValidateMod
+    publish_mod: PublishMod
+    list_mods: ListMods
+    get_mod: GetMod
+    download_mod: DownloadMod
+    mod_package: GetModPackage
+    unlist_mod: UnlistMod
+    install_mod: InstallMod
 
 
-__all__ = ["Authenticate", "CreateGame", "DeleteGame", "GetCatalog", "GetGame", "GetGameSummary", "GetGlobalStats",
-           "GetHistory",
+__all__ = ["Authenticate", "CreateGame", "CreativeChange", "DeleteGame", "GetCatalog", "GetGame", "GetGameSummary",
+           "GetGlobalStats", "GetHistory",
            "GetLeaderboard", "GetLegalActions", "GetMe", "GetPlayerProfile", "GetPlayerStats", "ImportGame",
            "ListGames", "PlayAction", "PreviewHand", "RunDebugCommand", "UpdateMe", "UseCases", "WatchGame"]

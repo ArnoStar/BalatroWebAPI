@@ -21,6 +21,7 @@ from balatro_api.application.dto import (
 from balatro_api.presentation.http.deps import CurrentPlayer, Uses
 from balatro_api.presentation.http.schemas import (
     ActionRequest,
+    CreativeRequest,
     DebugRequest,
     ImportGameRequest,
     NewGameRequest,
@@ -122,6 +123,13 @@ def coop_decks(game_id: str, player: CurrentPlayer, uses: Uses) -> CoopDecksView
 def debug(game_id: str, body: DebugRequest, player: CurrentPlayer, uses: Uses) -> ActionResult:
     """Only when the server runs with BALATRO_API_DEBUG_COMMANDS=1."""
     return uses.debug_command(player, game_id, body.command, body.expected_version)
+
+
+@router.post("/{game_id}/creative", response_model=ActionResult, summary="Creative mode: change the run")
+def creative(game_id: str, body: CreativeRequest, player: CurrentPlayer, uses: Uses) -> ActionResult:
+    """Only on a run played with a creative mod (409 illegal_action otherwise, or when the change can't be
+    made now). The change goes through the game's own rules and is recorded like an action."""
+    return uses.creative(player, game_id, body.to_dto(), body.expected_version)
 
 
 @router.post("/{game_id}/watch", status_code=status.HTTP_201_CREATED, response_model=WatchView,

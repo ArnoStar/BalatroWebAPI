@@ -11,7 +11,18 @@ from typing import Any
 from balatro_api.application import statistics
 from balatro_api.application.dto import GlobalStats, LeaderboardName
 from balatro_api.application.ports import BoardPage, PlayerRecord
-from balatro_api.domain import GameNotFound, Match, MatchNotFound, MatchStatus, Run, RunSummary, VersionConflict
+from balatro_api.domain import (
+    GameNotFound,
+    Match,
+    MatchNotFound,
+    MatchStatus,
+    ModRecord,
+    ModVersion,
+    Run,
+    RunSummary,
+    VersionConflict,
+    logic,
+)
 
 
 class InMemoryGameRepository:
@@ -21,6 +32,10 @@ class InMemoryGameRepository:
         self._players: dict[str, PlayerRecord] = {}
         self._pointers: dict[str, dict[int, dict[str, Any]]] = {}
         self._matches: dict[str, Match] = {}
+        self._packages: dict[str, dict[str, Any]] = {}
+        self._mods: dict[str, ModRecord] = {}
+        self._versions: dict[str, builtins.list[ModVersion]] = {}
+        self._installs: dict[str, set[str]] = {}
         self._lock = threading.Lock()
 
     def _remember(self, run: Run) -> None:
@@ -151,3 +166,60 @@ class InMemoryGameRepository:
                     if m.played and m.seat_of(player_id) is not None and (before is None or m.updated_at < before)]
             mine.sort(key=lambda m: m.updated_at, reverse=True)
             return [copy.deepcopy(m) for m in mine[:limit]]
+
+    # ------------------------------------------------------------ mods
+    def put_package(self, hash: str, package: dict[str, Any], at: datetime) -> None:
+        with self._lock:
+            self._packages.setdefault(hash, copy.deepcopy(package))
+
+    def package(self, hash: str) -> dict[str, Any] | None:
+        with self._lock:
+            p = self._packages.get(hash)
+            return copy.deepcopy(p) if p is not None else None
+
+    def logic(self, hashes: builtins.list[str] | tuple[str, ...]) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return {h: copy.deepcopy(logic(self._packages[h])) for h in hashes if h in self._packages}
+
+    def get_mod(self, mod_id: str) -> ModRecord | None:
+        with self._lock:
+            r = self._mods.get(mod_id)
+            return copy.deepcopy(r) if r is not None else None
+
+    def save_mod(self, record: ModRecord) -> None:
+        with self._lock:
+            self._mods[record.id] = copy.deepcopy(record)
+
+    def add_version(self, version: ModVersion) -> None:
+        with self._lock:
+            versions = self._versions.setdefault(version.mod_id, [])
+            if not any(v.version == version.version for v in versions):
+                versions.append(version)
+
+    def versions(self, mod_id: str) -> builtins.list[ModVersion]:
+        with self._lock:
+            return sorted(self._versions.get(mod_id, []), key=lambda v: v.created_at, reverse=True)
+
+    def find_mods(self, query: str | None, tag: str | None, sort: str, limit: int, offset: int,
+                  owner: str | None = None) -> tuple[builtins.list[ModRecord], int]:
+        with self._lock:
+            found = [r for r in self._mods.values() if (r.owner == owner if owner is not None else r.listed)]
+        if query:
+            q = query.lower()
+            found = [r for r in found if q in r.id.lower() or q in r.name.lower() or q in r.description.lower()]
+        if tag:
+            found = [r for r in found if tag in r.tags]
+        keys = {"popular": lambda r: (-r.installs, -r.updated_at.timestamp(), r.id),
+                "new": lambda r: (-r.created_at.timestamp(), r.id),
+                "updated": lambda r: (-r.updated_at.timestamp(), r.id),
+                "name": lambda r: (r.name.lower(), r.id)}
+        found.sort(key=keys.get(sort, keys["popular"]))
+        return [copy.deepcopy(r) for r in found[offset:offset + limit]], len(found)
+
+    def add_install(self, mod_id: str, player_id: str, at: datetime) -> int:
+        with self._lock:
+            players = self._installs.setdefault(mod_id, set())
+            players.add(player_id)
+            if mod_id in self._mods:
+                self._mods[mod_id].installs = len(players)
+            return len(players)

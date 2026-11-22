@@ -7,7 +7,7 @@ from typing import Any
 
 from balatro import Game
 
-from balatro_api.application.dto import AreaName, LegalAction, PlayerAction
+from balatro_api.application.dto import AreaName, CreativeCommand, LegalAction, PlayerAction
 from balatro_api.domain import IllegalAction
 
 # where each action looks for its card (engine area names)
@@ -18,6 +18,9 @@ AREA_NAMES: dict[str, AreaName] = {"jokers": "jokers", "consumeables": "consumab
                                    "shop_jokers": "shop", "shop_vouchers": "vouchers", "shop_booster": "boosters",
                                    "pack_cards": "pack"}
 NO_ARGUMENTS = ("select_blind", "skip_blind", "reroll_boss", "cash_out", "reroll", "end_shop", "skip_pack")
+CREATIVE_AREAS = ("jokers", "consumeables", "hand")
+CREATIVE_FIELDS = ("what", "value", "hand", "key", "edition", "seal", "enhancement", "rank", "suit", "to", "eternal",
+                   "perishable", "rental")
 BOSS_REROLL_COST = 10
 
 
@@ -77,6 +80,19 @@ def to_command(G: Game, a: PlayerAction) -> dict[str, Any]:
     raise IllegalAction(f"unknown action {t!r}")
 
 
+def creative_command(G: Game, c: CreativeCommand) -> dict[str, Any]:
+    """A creative mode change as the engine's command (a card by its area and index)."""
+    cmd: dict[str, Any] = {"cmd": "creative", "op": c.op}
+    for f in CREATIVE_FIELDS:
+        v = getattr(c, f)
+        if v is not None:
+            cmd[f] = v
+    if c.card is not None:
+        area, i = _find(G, CREATIVE_AREAS, c.card, "creative")
+        cmd["area"], cmd["index"] = area, i
+    return cmd
+
+
 def from_command(G: Game, cmd: dict[str, Any]) -> dict[str, Any]:
     """The player action an engine command is, in the game before it (cards by
     id): what a replay plays.  A debug command is ``{"type": "debug", "command": ...}``."""
@@ -101,6 +117,12 @@ def from_command(G: Game, cmd: dict[str, Any]) -> dict[str, Any]:
     if c == "move":
         return {"type": "move", "area": AREA_NAMES[cmd["area"]], "card": _cards(G, cmd["area"])[cmd["from"]].sort_id,
                 "to": cmd["to"]}
+    if c == "creative":  # (as POST /games/{id}/creative takes it: a card by id)
+        out: dict[str, Any] = {"type": "creative", **{k: v for k, v in cmd.items() if k in CREATIVE_FIELDS},
+                               "op": cmd["op"]}
+        if "area" in cmd and "index" in cmd:
+            out["card"] = int(_cards(G, cmd["area"])[cmd["index"]].sort_id)
+        return out
     return {"type": "debug", "command": dict(cmd)}
 
 
@@ -130,6 +152,8 @@ def legal_actions(G: Game) -> list[LegalAction]:
             c = _cards(G, "consumeables" if cmd == "use" else "pack_cards")[a["index"]]
             out.append(LegalAction(type=cmd, card=c.sort_id, area="consumables" if cmd == "use" else "pack",
                                    min_targets=a.get("min"), max_targets=a.get("max")))
+        elif cmd == "creative":  # (a creative mod: POST /games/{id}/creative)
+            out.append(LegalAction(type="creative"))
     if not G.is_game_over():
         for area in MOVE_AREAS:
             if len(_cards(G, area)) >= 2:

@@ -252,6 +252,39 @@ Match runs aren't listed with the player's runs and don't count for
 statistics. Without sign-in (development), a caller may name itself with the
 token `dev:<name>` to try a match alone with two tabs.
 
+## Mods
+
+Content mods are JSON packages in BalatroEngine's format (its
+`docs/mods.md`): new jokers, consumables, vouchers, decks, boss blinds and
+rules, or creative mode. They are data, never code: the engine checks a
+package and plays it, so a mod can't run anything on the server.
+
+| Route | |
+|---|---|
+| `GET /mods?q=&tag=&sort=popular\|new\|updated\|name&mine=` | browse the registry |
+| `POST /mods/validate` | check a package (the format, then a short run played with it): `errors` name their place in it |
+| `POST /mods` | publish a mod (its id becomes yours) or a higher version of yours |
+| `GET /mods/{id}`, `GET /mods/{id}/package?version=` | a mod and its versions; its package (to install or export) |
+| `POST /mods/{id}/install` | count an install (once per player) |
+| `DELETE /mods/{id}` | unlist it (its publisher, or a moderator) |
+| `GET /mods/packages/{hash}` | a package by its content hash |
+
+Start a run with mods: `POST /games` with `"mods": [{"id": "fruit_stand"},
+{"package": {...}}, {"hash": "..."}]` (a mod's deck is then a valid `deck`).
+The run's `settings.mods` name its packages by hash; packages are kept for
+good (an unlisted mod's too), so a run always replays with exactly its mods,
+and `GET /games/{id}/history` has their logic (`mod_packages`) for a rebuild
+elsewhere. A run with mods doesn't count for statistics and adds nothing to
+the player's progress.
+
+A run with a creative mod takes `POST /games/{id}/creative`: set the money,
+hands, discards, hand size, slots, ante, hand levels; add any card, voucher
+or tag (other mods' too); add, edit or remove cards; choose the boss; win the
+round. Each change is recorded like an action, so the run still replays.
+
+The engine's example mods (`fruit_stand`, `wild_rules`, `creative`) are
+published as official mods when the server starts (each version once).
+
 ## Settings
 
 | Variable | Default | |
@@ -289,7 +322,7 @@ claim). `application/permissions.py` says what they allow here:
 | Role | |
 |---|---|
 | `tester` | debug commands (`POST /games/{id}/debug`) on their own runs, even on a server without them; those runs don't count for statistics |
-| `developer` | the same, and rebuilding runs from histories (`POST /games/import`), to replay bug reports |
+| `developer` | the same, rebuilding runs from histories (`POST /games/import`), to replay bug reports, and moderating mods (publishing anyone's next version, unlisting any mod) |
 | `admin` | everything |
 
 ## Storage
