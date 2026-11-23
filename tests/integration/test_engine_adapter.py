@@ -256,3 +256,24 @@ def test_the_shop_slots_follow_overstock():
     engine = BalatroEngine()
     assert engine.view(new_run(engine, "red")).shop_slots == 2
     assert engine.view(new_run(engine, "zodiac", deck="b_zodiac")).shop_slots == 3  # it starts with Overstock
+
+
+def test_the_antes_blinds_come_in_every_phase_of_a_run():
+    # Run Info's Blinds tab reads them in the round and the shop (and a run opened there)
+    from balatro_api.infrastructure.engine import presenter
+    G = Game("TESTSEED").start_run()
+    G.do({"cmd": "select_blind"})
+    view = presenter.blind_select_view(G)
+    assert view is not None and [c.slot for c in view.choices] == ["Small", "Big", "Boss"]
+    assert view.choices[0].state == "Current" and view.choices[2].key.startswith("bl_")
+
+
+def test_run_info_counts_the_consumables_used():
+    # Fortune Teller (+1 Mult per Tarot), Satellite (per Planet), Ectoplasm (hand size)
+    from balatro_api.infrastructure.engine import presenter
+    G = Game("TESTSEED").start_run()
+    G.GAME.consumeable_usage_total = {"tarot": 3, "planet": 1, "spectral": 0, "tarot_planet": 4, "all": 4}
+    G.GAME.ecto_minus = 2
+    info = presenter.info_view(G)
+    assert info.consumable_usage_total["tarot"] == 3 and info.ecto_minus == 2
+    assert info.consumable_usage == {}

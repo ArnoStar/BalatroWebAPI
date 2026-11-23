@@ -273,7 +273,7 @@ class ImportGame:
         packages = self._packages(refs, request.mod_packages)
         settings = self.engine.check_settings(GameSettings(
             seed=request.seed, deck=request.deck, stake=request.stake, challenge=request.challenge,
-            game_speed=request.game_speed, seeded=request.seeded, mods=refs), packages)
+            game_speed=request.game_speed, seeded=request.seeded, mode=request.mode, mods=refs), packages)
         now = self.clock.now()
         run = Run(id=self.ids.new_id(), settings=settings, engine_version=self.engine.version,
                   progress=Progress(Phase.BLIND_SELECT, 1, 0, 0, False),  # (replaced by the replay's)

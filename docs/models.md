@@ -94,7 +94,7 @@ A run as the player sees it. It is returned by `GET /games/{id}`,
 | `shop_slots` | integer | the cards the shop offers besides vouchers and packs: 2, one more with each of Overstock and Overstock Plus |
 | `round_score` | number | the score so far this round |
 | `blind` | [BlindView](#blindview) \| null | the blind being played (phases `playing` and `round_eval`) |
-| `blind_select` | [BlindSelectView](#blindselectview) \| null | the three blinds of the ante (phase `blind_select`) |
+| `blind_select` | [BlindSelectView](#blindselectview) \| null | the three blinds of the ante, in every phase but `game_over` (the choice in phase `blind_select`; what Run Info shows in the others) |
 | `hand` | [CardView](#cardview)[] | the hand, left to right |
 | `jokers` | CardView[] | the jokers, left to right |
 | `consumables` | CardView[] | the consumables, left to right |
@@ -343,6 +343,9 @@ Values that card descriptions read, as the game's tooltips show them.
 | `hands_played` | integer | hands played this run |
 | `unused_discards` | integer | discards left unused, summed over rounds (Garbage Tag) |
 | `round_targets` | [RoundTargets](#roundtargets) | |
+| `consumable_usage_total` | object | consumables used this run by kind: `tarot`, `planet`, `spectral`, `tarot_planet`, `all` (Fortune Teller) |
+| `consumable_usage` | object | how many times each consumable was used this run, by key (Satellite counts the Planets) |
+| `ecto_minus` | integer | the hand size the next Ectoplasm takes |
 
 ### RoundTargets
 

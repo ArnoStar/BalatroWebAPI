@@ -110,6 +110,7 @@ class ImportedRun:
     start_profile: dict[str, Any] | None = None  # the progress the run started from (HistoryView.start_profile)
     mods: tuple[dict[str, Any], ...] = ()  # the history's settings.mods (ModRefView)
     mod_packages: dict[str, dict[str, Any]] | None = None  # the history's packages, by hash
+    mode: str | None = None  # a multiplayer run's rules (pvp, coop), which its commands were played by
 
 
 # ------------------------------------------------------------------ cards
@@ -282,6 +283,10 @@ class RunInfo:
     hands_played: int
     unused_discards: int
     round_targets: RoundTargets
+    # Tarots, Planets, Spectrals used this run, by kind (Fortune Teller) and by card (Satellite)
+    consumable_usage_total: dict[str, int] = field(default_factory=dict)
+    consumable_usage: dict[str, int] = field(default_factory=dict)
+    ecto_minus: int = 1  # hand size the next Ectoplasm takes
 
 
 @dataclass(frozen=True, kw_only=True)
