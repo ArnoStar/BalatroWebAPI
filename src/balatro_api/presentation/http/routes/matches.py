@@ -19,7 +19,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
-from balatro_api.application.dto import CoopStepsView, MatchHistoryView, MatchView, MultiplayerStats
+from balatro_api.application.dto import (
+    CoopStepsView,
+    MatchHistoryView,
+    MatchView,
+    MultiplayerBoardName,
+    MultiplayerGlobalStats,
+    MultiplayerLeaderboard,
+    MultiplayerStats,
+)
 from balatro_api.presentation.http.deps import CurrentPlayer, Uses
 from balatro_api.presentation.http.schemas import (
     EmoteRequest,
@@ -68,6 +76,24 @@ def multiplayer_stats(player: CurrentPlayer, uses: Uses) -> MultiplayerStats:
     """From their finished matches: PvP wins, losses, streaks and damage; coop runs, antes and chips; the
     players they played most with."""
     return uses.multiplayer_stats(player)
+
+
+@router.get("/stats/global", response_model=MultiplayerGlobalStats, summary="Everyone's matches together")
+def multiplayer_global_stats(player: CurrentPlayer, uses: Uses) -> MultiplayerGlobalStats:
+    """Every finished match: PvP and coop counts, antes, damage, chips, the decks played, and matches by day
+    (the last 30)."""
+    return uses.multiplayer_global_stats(player)
+
+
+@router.get("/leaderboards/{board}", response_model=MultiplayerLeaderboard, summary="A multiplayer leaderboard")
+def multiplayer_leaderboard(board: MultiplayerBoardName, player: CurrentPlayer, uses: Uses,
+                            limit: Annotated[int, Query(ge=1, le=200)] = 50) -> MultiplayerLeaderboard:
+    """The best of everyone's finished matches, best first, with the caller's own entry in ``you``:
+    ``pvp_wins``, ``pvp_streak`` (PvP matches won in a row), ``pvp_biggest_hit`` (the most hit points one
+    blind took), ``coop_ante`` (coop pairs, by the ante their run reached, then its rounds), ``coop_wins``
+    (coop runs won), ``coop_best_hand`` (a player's best single hand in coop). Players are shown by their
+    display name."""
+    return uses.multiplayer_leaderboard(player, board, limit)
 
 
 @router.get("/{match_id}", response_model=MatchView, summary="The match as the player sees it")

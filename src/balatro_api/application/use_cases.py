@@ -68,6 +68,8 @@ from .matches import (
     CurrentMatch,
     GetMatch,
     GetMatchHistory,
+    GetMultiplayerGlobalStats,
+    GetMultiplayerLeaderboard,
     GetMultiplayerStats,
     GetSteps,
     JoinMatch,
@@ -655,6 +657,8 @@ class UseCases:
     send_emote: SendEmote
     match_history: GetMatchHistory
     multiplayer_stats: GetMultiplayerStats
+    multiplayer_leaderboard: GetMultiplayerLeaderboard
+    multiplayer_global_stats: GetMultiplayerGlobalStats
     creative: CreativeChange
     validate_mod: ValidateMod
     publish_mod: PublishMod

@@ -294,6 +294,11 @@ class MatchRepository(Protocol):
         (by ``updated_at``), only those before ``before`` if given."""
         ...
 
+    def all_finished_matches(self) -> list[Match]:
+        """Everyone's finished matches (not lobbies closed before starting), the latest first: the
+        multiplayer leaderboards and statistics."""
+        ...
+
 
 @dataclass(frozen=True)
 class BoardRow:

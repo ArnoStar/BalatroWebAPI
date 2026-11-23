@@ -167,6 +167,11 @@ class InMemoryGameRepository:
             mine.sort(key=lambda m: m.updated_at, reverse=True)
             return [copy.deepcopy(m) for m in mine[:limit]]
 
+    def all_finished_matches(self) -> builtins.list[Match]:
+        with self._lock:
+            played = sorted((m for m in self._matches.values() if m.played), key=lambda m: m.updated_at, reverse=True)
+            return [copy.deepcopy(m) for m in played]
+
     # ------------------------------------------------------------ mods
     def put_package(self, hash: str, package: dict[str, Any], at: datetime) -> None:
         with self._lock:

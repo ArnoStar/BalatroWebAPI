@@ -338,6 +338,28 @@ def test_a_finished_match_has_its_summary_history_and_stats(app):
     assert len(call(app, "ann", "GET", "/matches/history")["matches"]) == 1
 
 
+def test_multiplayer_leaderboards_and_global_stats(app):
+    a, _ = started(app)
+    call(app, "bob", "POST", f"/matches/{a['id']}/leave", 204)  # (ann wins)
+    c, _ = coop_started(app)
+    call(app, "ann", "POST", f"/matches/{c['id']}/leave", 204)
+    wins = call(app, "cy", "GET", "/matches/leaderboards/pvp_wins")
+    assert wins["board"] == "pvp_wins" and wins["players"] == 1 and wins["you"] is None
+    (top,) = wins["entries"]
+    assert top["rank"] == 1 and top["value"] == 1 and top["played"] == 1 and not top["you"]
+    assert top["players"] == [{"id": "local:ann", "name": "ann", "you": False}]
+    pair = call(app, "bob", "GET", "/matches/leaderboards/coop_ante")
+    assert [p["id"] for p in pair["entries"][0]["players"]] == ["local:ann", "local:bob"]
+    assert pair["entries"][0]["value"] == 1 and pair["you"]["you"] and pair["you"]["rounds"] is not None
+    assert call(app, "ann", "GET", "/matches/leaderboards/coop_wins")["entries"] == []
+    assert call(app, "ann", "GET", "/matches/leaderboards/nope", 422)
+    assert call(app, "ann", "GET", "/matches/leaderboards/pvp_wins?limit=0", 422)
+    g = call(app, "cy", "GET", "/matches/stats/global")
+    assert g["players"] == 2 and g["matches"] == 2 and g["pvp"]["matches"] == 1 and g["pvp"]["left"] == 1
+    assert g["coop"]["matches"] == 1 and g["decks"] == [{"deck": "b_red", "pvp": 1, "coop": 1}]
+    assert len(g["days"]) == 30 and (g["days"][-1]["pvp"], g["days"][-1]["coop"]) == (1, 1)
+
+
 def test_the_players_watch_each_others_runs_once_the_match_is_over(app):
     a, b = started(app)
     call(app, "ann", "GET", f"/games/{b['run_id']}/history", 404)  # (the match is being played)
