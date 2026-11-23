@@ -29,7 +29,8 @@ def pvp(i: int, a: str, b: str, winner: int | None, hits: tuple[int, int] = (0, 
 
 def coop(i: int, a: str, b: str, ante: int, rounds: int, won: bool = False, best: tuple[float, float] = (0, 0),
          **kw: Any) -> Match:
-    players = [{"seat": s, "best_hand": best[s], "best_hand_name": "Flush", "hands": 3, "chips": best[s]} for s in (0, 1)]
+    players = [{"seat": s, "best_hand": best[s], "best_hand_name": "Flush", "hands": 3, "chips": best[s]}
+               for s in (0, 1)]
     return match(i, "coop", (a, b), None, "run_over", {"ante": ante, "rounds": rounds, "run_won": won,
                                                        "players": players}, **kw)
 
