@@ -87,7 +87,7 @@ from .dto import (
     RematchView,
 )
 from .locks import RunLocks
-from .multiplayer_boards import multiplayer_global_stats, multiplayer_leaderboard
+from .multiplayer_boards import COOP_BOARDS, coop_run_ids, multiplayer_global_stats, multiplayer_leaderboard
 from .ports import Clock, GameEngine, GameRepository, IdGenerator, MatchRecord, MatchRepository, PvPState
 from .statistics import score
 
@@ -810,7 +810,9 @@ class GetMultiplayerLeaderboard:
         self.m = matches
 
     def __call__(self, player: Player, board: MultiplayerBoardName, limit: int = 50) -> MultiplayerLeaderboard:
-        return multiplayer_leaderboard(self.m.matches.all_finished_matches(), board, player.id, limit)
+        matches = self.m.matches.all_finished_matches()
+        runs = {r.id: r for r in self.m.games.run_summaries(coop_run_ids(matches))} if board in COOP_BOARDS else {}
+        return multiplayer_leaderboard(matches, board, player.id, limit, runs)
 
 
 class GetMultiplayerGlobalStats:

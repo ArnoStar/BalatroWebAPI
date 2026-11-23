@@ -247,6 +247,10 @@ class GameRepository(Protocol):
         """All the owner's runs (with their stats), least recently updated first."""
         ...
 
+    def run_summaries(self, ids: Sequence[str]) -> builtins.list[RunSummary]:
+        """These runs (with their stats), in no order; an unknown id is left out."""
+        ...
+
     def save_pointer(self, run_id: str, version: int, pointer: dict[str, Any]) -> None:
         """Keep the player's pointer before the action played at ``version`` (for watching the run
         again). Not part of the run: an action stands without it."""

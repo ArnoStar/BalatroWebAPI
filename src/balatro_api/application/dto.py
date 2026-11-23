@@ -1294,9 +1294,11 @@ class MultiplayerStats:
     partners: list[MatchOpponentStats]  # coop partners, most played first
 
 
-MultiplayerBoardName = Literal["pvp_wins", "pvp_streak", "pvp_biggest_hit", "coop_ante", "coop_wins", "coop_best_hand"]
+MultiplayerBoardName = Literal["coop_best_hand", "coop_ante", "coop_round", "coop_money", "coop_boss_streak",
+                               "coop_wins", "pvp_wins", "pvp_streak", "pvp_biggest_hit"]
 MULTIPLAYER_BOARDS: tuple[MultiplayerBoardName, ...] = (
-    "pvp_wins", "pvp_streak", "pvp_biggest_hit", "coop_ante", "coop_wins", "coop_best_hand")
+    "coop_best_hand", "coop_ante", "coop_round", "coop_money", "coop_boss_streak", "coop_wins",
+    "pvp_wins", "pvp_streak", "pvp_biggest_hit")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1308,25 +1310,26 @@ class MultiplayerBoardPlayer:
 
 @dataclass(frozen=True, kw_only=True)
 class MultiplayerLeaderboardEntry:
-    """A player's best (for ``coop_ante``: a pair of coop partners' best run together)."""
+    """A PvP player's best, or a coop pair's (the two players of their coop runs together)."""
 
     rank: int  # 1 = the best; tied values share a rank
-    players: list[MultiplayerBoardPlayer]  # the player, or the coop pair (coop_ante)
+    players: list[MultiplayerBoardPlayer]  # the PvP player, or the coop pair
     you: bool  # the caller is one of them
-    value: Score  # wins, matches won in a row, hit points, an ante, chips: as the board says
-    played: int  # the matches of the board's mode they played (the pair: together)
+    value: Score  # chips, an ante, a round, dollars, bosses, wins, matches in a row, hit points: as the board says
+    played: int  # the matches of the board's mode they played (a pair: together)
     rounds: int | None = None  # coop_ante: the rounds that run went (ties broken by them)
-    hand: str | None = None  # coop_best_hand: the poker hand
+    hand: str | None = None  # coop_best_hand: the poker hand (when known)
     achieved_at: datetime  # when the value was reached (wins: the latest win)
 
 
 @dataclass(frozen=True, kw_only=True)
 class MultiplayerLeaderboard:
-    """The best of everyone's finished multiplayer matches: PvP wins, best win streak, biggest hit;
-    coop pairs by the ante their run reached, coop runs won, best single coop hand."""
+    """The best of everyone's finished multiplayer matches. Coop, by pair (their runs together): best hand,
+    highest ante (then round), highest round, most money, bosses in a row, runs won. PvP, by player: wins,
+    matches won in a row, biggest hit."""
 
     board: MultiplayerBoardName
-    players: int  # entries on the board (players, or pairs for coop_ante)
+    players: int  # entries on the board (players, or coop pairs)
     entries: list[MultiplayerLeaderboardEntry]  # the top ones
     you: MultiplayerLeaderboardEntry | None  # the caller's best entry, even outside the top (None: not on it)
 

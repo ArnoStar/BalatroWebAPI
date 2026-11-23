@@ -88,11 +88,11 @@ def multiplayer_global_stats(player: CurrentPlayer, uses: Uses) -> MultiplayerGl
 @router.get("/leaderboards/{board}", response_model=MultiplayerLeaderboard, summary="A multiplayer leaderboard")
 def multiplayer_leaderboard(board: MultiplayerBoardName, player: CurrentPlayer, uses: Uses,
                             limit: Annotated[int, Query(ge=1, le=200)] = 50) -> MultiplayerLeaderboard:
-    """The best of everyone's finished matches, best first, with the caller's own entry in ``you``:
-    ``pvp_wins``, ``pvp_streak`` (PvP matches won in a row), ``pvp_biggest_hit`` (the most hit points one
-    blind took), ``coop_ante`` (coop pairs, by the ante their run reached, then its rounds), ``coop_wins``
-    (coop runs won), ``coop_best_hand`` (a player's best single hand in coop). Players are shown by their
-    display name."""
+    """The best of everyone's finished matches, best first, with the caller's own entry in ``you``. Coop
+    boards rank pairs (the two players of a coop run, together): ``coop_best_hand``, ``coop_ante`` (then the
+    round), ``coop_round``, ``coop_money``, ``coop_boss_streak`` (bosses beaten in a row), ``coop_wins`` (runs
+    won). PvP boards rank players: ``pvp_wins``, ``pvp_streak`` (matches won in a row), ``pvp_biggest_hit``
+    (the most hit points one blind took). Players are shown by their display name."""
     return uses.multiplayer_leaderboard(player, board, limit)
 
 
