@@ -423,7 +423,7 @@ shows it. How to use them is explained in [Animations](animations.md).
 | `card_moved` | `card`, `to` (area: `deck`, `hand`, `play`, `discard`, `jokers`, `consumables`, `shop`, `vouchers`, `boosters`, `pack`) | a card arrives in an area |
 | `card_flipped` | `card`, `face_down` (boolean), `view` (face up: the card's CardView as it ends the action) | a card turns over. Show the card as `view` says: a tarot or spectral may just have changed it, and it may end the action in the deck, which `game` doesn't list |
 | `card_juiced` | `card`, `scale`, `rot` | a card wiggles (`juice_up(scale, rot)`, `null`: the defaults): the joker behind a scored or held card's effect (its pop-up is on the playing card: Ancient Joker, Greedy Joker...), the Uncommon Joker that Baseball Card multiplies (its X1.5 pops up on Baseball Card), a card that Midas Mask turns Gold or Vampire drains |
-| `card_changed` | `card`, `change` (`edition`, `seal`), `view` | the card juices with its new edition's or seal's sound (Aura, Hex, Ectoplasm, Déjà Vu, Talisman...); `view` is how it looks |
+| `card_changed` | `card`, `change` (`edition`, `seal`, `enhancement`), `view` | the card juices with its new edition's or seal's sound (Aura, Hex, Ectoplasm, Déjà Vu, Talisman...); `enhancement`: it shows its new enhancement, silently (Midas Mask's Gold Cards, Vampire); `view` is how it looks |
 | `attention_text` | `card`, `key` | a big text over the card; `key` is the game's localization key (`k_nope_ex`: The Wheel of Fortune missed) |
 | `card_unlocked` | `key`, `set` | the player has just unlocked this joker, voucher or deck (the game's "Unlocked!" notification) |
 | `card_removed` | `card`, `area` | a card leaves the game (sold, used, destroyed, or a shop card when the shop closes) |

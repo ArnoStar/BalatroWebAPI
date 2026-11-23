@@ -44,6 +44,10 @@ class GameSettings:
     seeded: bool = False
     mode: str | None = None
     """A multiplayer mode's rules (the engine's mod: "pvp"), or None for the game's own."""
+    mode_rules: int | None = None
+    """Which version of the mode's rules the run is played with (the engine's, kept with the run so it replays
+    as it was played). Coop: 1, a deck for each player and slowly growing blinds (runs until 2026-11-23); 2, one
+    deck for both and steep blinds. None: the mode has one version, or a coop run from before it had two (1)."""
     mods: tuple[ModRef, ...] = ()
     """The content mods the run is played with (packages, by hash)."""
 
@@ -56,6 +60,8 @@ class GameSettings:
             raise InvalidGameSettings("multiplayer runs are played without mods")
         if self.mode is not None and self.mode not in RUN_MODES:
             raise InvalidGameSettings(f"the mode is one of {', '.join(RUN_MODES)}")
+        if self.mode_rules is not None and (self.mode is None or self.mode_rules < 1):
+            raise InvalidGameSettings("mode rules are a multiplayer mode's version, from 1")
         if not SEED_PATTERN.match(self.seed):
             raise InvalidGameSettings("a seed is 1 to 8 letters or digits")
         if not 1 <= self.stake <= 8:

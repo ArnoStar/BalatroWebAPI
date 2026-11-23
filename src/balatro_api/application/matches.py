@@ -183,8 +183,10 @@ class Matches:
             return None
         sel_seat, cards, seq = self.selections.get(match.id, (-1, [], 0))
         turn = int(state["turn"])
-        return CoopMatchView(turn=turn, your_turn=turn == seat, selection=cards if sel_seat == turn else [],
-                             selection_seq=seq, over=bool(state["over"]))
+        # (the hand is the turn's player's to select, or a pack's opener's while it is open)
+        selecting = turn if state.get("pack_seat") is None else int(state["pack_seat"])
+        return CoopMatchView(turn=turn, your_turn=turn == seat, selection=cards if sel_seat == selecting else [],
+                             selection_seq=seq, over=bool(state["over"]), selecting=selecting)
 
     def refresh(self, match: Match) -> tuple[list[MatchRecord], PvPState | None]:
         """Catch up (the caller holds the match's lock): who waits since when, the timer, the end."""
@@ -613,7 +615,8 @@ class StartMatch:
             # PvP: a run each; coop: one run for both (its owner the host; the other player plays it too)
             for p in match.players if match.mode == "pvp" else match.players[:1]:
                 settings = m.engine.check_settings(GameSettings(
-                    seed=seed, deck=s.deck, stake=s.stake, game_speed=p.game_speed, seeded=True, mode=match.mode))
+                    seed=seed, deck=s.deck, stake=s.stake, game_speed=p.game_speed, seeded=True, mode=match.mode,
+                    mode_rules=m.engine.latest_mode_rules(match.mode)))
                 run_id = m.ids.new_id()
                 progress = m.engine.start(run_id, settings, MATCH_PROFILE)
                 run = Run(id=run_id, settings=settings, engine_version=m.engine.version, progress=progress,

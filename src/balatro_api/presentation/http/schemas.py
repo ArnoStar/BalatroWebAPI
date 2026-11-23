@@ -210,6 +210,7 @@ class ImportSettings(BaseModel):
     seeded: bool = True
     mods: list[dict[str, Any]] = Field(default_factory=list, max_length=16)
     mode: str | None = Field(None, description="a multiplayer run's rules (pvp, coop): its commands replay by them")
+    mode_rules: int | None = Field(None, ge=1, description="the version of the mode's rules (none: the first)")
 
 
 class ImportGameRequest(BaseModel):
@@ -231,7 +232,7 @@ class ImportGameRequest(BaseModel):
                            game_speed=float(s.game_speed), commands=tuple(self.commands),
                            seeded=s.seeded if self.start_profile is not None else True,
                            start_profile=self.start_profile, mods=tuple(s.mods), mod_packages=self.mod_packages,
-                           mode=s.mode)
+                           mode=s.mode, mode_rules=s.mode_rules)
 
 
 class CreativeRequest(BaseModel):

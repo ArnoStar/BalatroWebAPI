@@ -111,6 +111,7 @@ class ImportedRun:
     mods: tuple[dict[str, Any], ...] = ()  # the history's settings.mods (ModRefView)
     mod_packages: dict[str, dict[str, Any]] | None = None  # the history's packages, by hash
     mode: str | None = None  # a multiplayer run's rules (pvp, coop), which its commands were played by
+    mode_rules: int | None = None  # the version of the mode's rules (the history's settings.mode_rules)
 
 
 # ------------------------------------------------------------------ cards
@@ -327,13 +328,16 @@ class SettingsView:
     game_speed: float
     seeded: bool = False  # the player chose the seed: the run doesn't count for statistics
     mode: str | None = None  # a multiplayer run's mode ("pvp"), with its rules; None: the game's own rules
+    # the version of the mode's rules (coop: 1, a deck each and slow blinds; 2, one deck and steep blinds); None:
+    # the mode's first (send it back with the history when importing a run)
+    mode_rules: int | None = None
     mods: list[ModRefView] = field(default_factory=list)  # content mods: the run doesn't count
 
 
 @dataclass(frozen=True, kw_only=True)
 class CoopSeatView:
-    deck: int  # cards left in their deck
-    hand: int  # cards in their hand (the turn's is ``hand``)
+    deck: int  # cards left in their deck (one deck for both: the deck's)
+    hand: int  # cards in their hand (the turn's is ``hand``; one deck for both: the hand's)
     # the player's numbers this run: hands played, the chips they scored, their best hand, discards
     hands: int = 0
     chips: Score = 0
@@ -351,8 +355,9 @@ class CoopView:
     your_turn: bool
     joker_slots: list[int]  # each seat's (``jokers``' ``owner``)
     shop_votes: list[int]  # the seats that asked to leave the shop (it is left once both have)
-    pack_seat: int | None  # who opened the pack on screen (they pick from it)
+    pack_seat: int | None  # who opened the pack on screen (they pick from it, and select the hand's cards for it)
     seats: list[CoopSeatView]
+    shared_deck: bool = False  # one deck and hand for both players (else each has their own: mode_rules 1)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -535,7 +540,9 @@ class CardChangedEvent:
     type: Literal["card_changed"] = "card_changed"
     t: float
     card: int
-    change: Literal["edition", "seal"]  # the card shines with its new edition or seal (Aura, Hex, Deja Vu...)
+    # the card shines with its new edition or seal (Aura, Hex, Deja Vu...), or shows its new enhancement while a
+    # hand is scored (Midas Mask's Gold Cards, Vampire's taken ones)
+    change: Literal["edition", "seal", "enhancement"]
     view: CardView | None = None  # how it looks now
 
 
@@ -1120,9 +1127,10 @@ class CoopMatchView:
 
     turn: int  # whose turn it is
     your_turn: bool
-    selection: list[int]  # the cards the player whose turn it is has selected (for the other one to watch)
+    selection: list[int]  # the cards the player who selects (``selecting``) has selected, for the other one to watch
     selection_seq: int  # it changes with each new selection
     over: bool  # the run is over (lost)
+    selecting: int | None = None  # whose selection it is: the turn's player's, or the pack's opener's while it is open
 
 
 @dataclass(frozen=True, kw_only=True)
