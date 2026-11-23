@@ -359,29 +359,35 @@ class GetHistory:
 
 
 class WatchGame:
-    """Watch a run again: a copy of it at its start (the caller's, not listed and not counted)
-    and its actions, to play on the copy with their animations."""
+    """Watch a run again: a copy of it at its start, or after its first ``at`` actions (the
+    caller's, not listed and not counted), and its actions, to play on the copy with their
+    animations (from step ``at``)."""
 
     def __init__(self, engine: GameEngine, games: GameRepository, ids: IdGenerator, clock: Clock,
                  matches: Matches | None = None) -> None:
         self.engine, self.games, self.ids, self.clock = engine, games, ids, clock
         self.matches = matches
 
-    def __call__(self, player: Player, game_id: str) -> WatchView:
+    def __call__(self, player: Player, game_id: str, at: int = 0) -> WatchView:
         source = viewable_run(self.games, player, game_id, self.matches)
         steps = self.engine.replay_steps(source)
         pointers = self.games.pointers(source.id)
+        at = max(0, min(at, len(source.commands)))
         copy_id = self.ids.new_id()
         progress = self.engine.start(copy_id, source.settings, source.start_profile, source.mod_packages)
         now = self.clock.now()
         copy = Run(id=copy_id, settings=source.settings, engine_version=self.engine.version, progress=progress,
                    created_at=now, updated_at=now, owner=player.id, owner_name=player.name, debug=True, replay=True,
-                   start_profile=source.start_profile, mod_packages=dict(source.mod_packages))
-        copy.stats = self.engine.run_stats(copy)
+                   start_profile=source.start_profile, mod_packages=dict(source.mod_packages),
+                   commands=list(source.commands[:at]))
+        if at:
+            copy.progress, copy.stats = self.engine.load(copy)  # (the copy goes on from there)
+        else:
+            copy.stats = self.engine.run_stats(copy)
         self.games.add(copy)
         owner = self.games.player(source.owner)
         return WatchView(source=source.id, owner_name=owner.name if owner else source.owner_name,
-                         game=self.engine.view(copy),
+                         game=self.engine.view(copy), start=at,
                          steps=[ReplayStep(version=i, action=a, pointer=pointers.get(i)) for i, a in enumerate(steps)])
 
 

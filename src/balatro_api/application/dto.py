@@ -1001,6 +1001,7 @@ class WatchView:
     owner_name: str | None
     game: GameView
     steps: list[ReplayStep]
+    start: int = 0  # the step the copy is at (its first ``start`` steps already played): the next to play
 
 
 # ------------------------------------------------------------------ multiplayer

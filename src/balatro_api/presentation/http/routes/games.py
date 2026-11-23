@@ -134,8 +134,12 @@ def creative(game_id: str, body: CreativeRequest, player: CurrentPlayer, uses: U
 
 @router.post("/{game_id}/watch", status_code=status.HTTP_201_CREATED, response_model=WatchView,
              summary="Watch a run again")
-def watch_game(game_id: str, player: CurrentPlayer, uses: Uses) -> WatchView:
-    """A copy of the run at its start (a new run of the caller's, not listed and not counted) and
-    the player's actions: play ``steps`` on the copy, in order, to see the run again. One's own
-    runs, and others' finished runs unless their profile is private (developers: any run)."""
-    return uses.watch_game(player, game_id)
+def watch_game(game_id: str, player: CurrentPlayer, uses: Uses,
+               at: Annotated[int, Query(ge=0, description="Start the copy after this many of the run's actions "
+                                                          "(to go to a point of the run); 0: its start")] = 0,
+               ) -> WatchView:
+    """A copy of the run at its start, or after its first ``at`` actions (a new run of the
+    caller's, not listed and not counted), and the player's actions: play ``steps`` on the copy,
+    in order from ``start``, to see the run again. One's own runs, and others' finished runs unless
+    their profile is private (developers: any run)."""
+    return uses.watch_game(player, game_id, at)
