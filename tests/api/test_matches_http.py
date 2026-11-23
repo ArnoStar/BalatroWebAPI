@@ -226,7 +226,7 @@ def test_coop_is_one_run_played_in_turns(app):
     g_ann = call(app, "ann", "GET", f"/games/{run}")
     g_bob = call(app, "bob", "GET", f"/games/{run}")
     assert g_ann["settings"]["mode"] == "coop" and g_ann["joker_slots"] == 10 and g_ann["discards_left"] == 8
-    assert g_ann["settings"]["mode_rules"] == 2 and g_ann["coop"]["shared_deck"]  # (one deck for both)
+    assert g_ann["settings"]["mode_rules"] == 3 and g_ann["coop"]["shared_deck"]  # (one deck for both)
     assert g_ann["coop"]["seat"] == 0 and g_bob["coop"]["seat"] == 1
     assert "select_blind" in [x["type"] for x in g_ann["actions"]]
     assert "select_blind" not in [x["type"] for x in g_bob["actions"]]
@@ -275,7 +275,7 @@ def test_a_coop_run_replays_with_its_rules(app):
     played; the rules come back with its history."""
     a, _ = coop_started(app)
     h = call(app, "ann", "GET", f"/games/{a['run_id']}/history")
-    assert h["settings"]["mode_rules"] == 2
+    assert h["settings"]["mode_rules"] == 3
     old = {**h, "settings": {**h["settings"], "mode_rules": None}}
     g = call(app, "ann", "POST", "/games/import", 201, **old)
     g = act(app, "ann", g["id"], type="select_blind")["game"]

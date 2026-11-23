@@ -67,7 +67,7 @@ returns the new `GameView` together with `events`.
 | `POST /api/v1/games/{id}/actions` | Act (`pointer`, optional: the player's pointer since the previous action, kept to show it when the run is watched; it changes nothing in the game) |
 | `POST /api/v1/games/{id}/preview` | The poker hand some selected cards make, as the game shows it while selecting |
 | `GET /api/v1/games/{id}/history` | The run's settings, start profile and commands (for bug reports and replays): one's own runs, and others' finished runs unless their profile is private |
-| `POST /api/v1/games/{id}/watch` | Watch a run again: a copy at its start (not listed, not counted) and the player's actions to play on it, each with the `pointer` sent with it |
+| `POST /api/v1/games/{id}/watch` | Watch a run again: a copy at its start (not listed, not counted) and the player's actions to play on it, each with the `pointer` sent with it; `?at=n`: the copy with the first n actions played (`start`), to go to any point of the run |
 | `GET /api/v1/players/me` | Your settings (`private`) and progress: what is unlocked and discovered, the stakes reached per deck, the challenges open |
 | `PATCH /api/v1/players/me` | `private` (only your name on your profile, runs not watchable); `all_unlocked` (testers, developers, admins: new runs fully unlocked) |
 | `GET /api/v1/players/{id}` | A player's profile: stats, collection, recent (finished) runs; a private one shows only the name |
@@ -210,8 +210,10 @@ the engine's coop rules (`settings.mode: "coop"`, `balatro.mods.coop`): one
 deck and hand for both, the jokers shared (10 slots, 5 each: all count, each
 player sells and moves only theirs, `CardView.owner`), hands and hand levels
 shared, discards doubled, blinds growing much faster. A run keeps the version
-of the rules it was started with (`settings.mode_rules`: 2 since 2026-11-23;
-1 or none, the runs before: a deck each, slowly growing blinds), so it
+of the rules it was started with (`settings.mode_rules`: 3 since engine
+0.9.1, 2026-11-23: an ask to leave the shop holds while the other player
+opens a pack; 2, engine 0.9.0: such a pack dropped it; 1 or none, the runs
+before: a deck each, slowly growing blinds), so it
 replays as it was played; send it back when importing a history. The partner
 plays the host's run with the run routes too (they're a member of its
 match); each action is played for the caller's seat (`GameView.coop.seat`),

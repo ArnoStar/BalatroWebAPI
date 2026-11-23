@@ -101,6 +101,25 @@ def test_finished_runs_can_be_watched_by_anyone(client: TestClient) -> None:
     assert client.get(f"{API}/games/{original['id']}/history", headers=BOB).json()["start_profile"] is not None
 
 
+def test_a_watch_can_start_at_any_point_of_the_run(client: TestClient) -> None:
+    original = lose(client, ALICE)
+    at = original["version"] // 2
+    w = client.post(f"{API}/games/{original['id']}/watch", params={"at": at}, headers=BOB).json()
+    assert w["start"] == at and w["game"]["version"] == at and len(w["steps"]) == original["version"]
+    copy = w["game"]
+    for step in w["steps"][at:]:
+        r = client.post(f"{API}/games/{copy['id']}/actions", json=step["action"], headers=BOB)
+        assert r.status_code == 200, (step, r.text)
+        copy = r.json()["game"]
+    for key in ("phase", "ante", "round", "dollars", "round_score", "hand", "jokers"):
+        assert copy[key] == original[key], key
+    # past the end: the run as it ended; a negative point is refused
+    end = client.post(f"{API}/games/{original['id']}/watch", params={"at": 10**6}, headers=BOB).json()
+    assert end["start"] == original["version"] and end["game"]["phase"] == original["phase"]
+    assert client.post(f"{API}/games/{original['id']}/watch", params={"at": -1}, headers=BOB).status_code == 422
+    assert client.post(f"{API}/games/{original['id']}/watch", headers=BOB).json()["start"] == 0
+
+
 def test_the_players_pointer_is_shown_to_watchers(client: TestClient) -> None:
     game = client.post(f"{API}/games", json={"seed": "POINTER1"}, headers=ALICE).json()
     pointer = {"v": 1, "e": [[0, "m", 10.5, 4.25], [640, "d", 11, 4.5, 0], [700, "u", 11, 4.5, 0]]}
