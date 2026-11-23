@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from balatro_api.application.multiplayer_boards import multiplayer_global_stats, multiplayer_leaderboard
-from balatro_api.domain import Match, MatchPlayer, MatchSettings
+from balatro_api.application.multiplayer_boards import coop_run_ids, multiplayer_global_stats, multiplayer_leaderboard
+from balatro_api.domain import GameSettings, Match, MatchPlayer, MatchSettings, Phase, Progress, RunStats, RunSummary
 
 NOW = datetime(2026, 11, 23, 12, tzinfo=UTC)
 
@@ -16,7 +16,7 @@ def match(i: int, mode: str, players: tuple[str, str], winner: int | None = None
     at = NOW - timedelta(days=days_ago) + timedelta(minutes=i)
     m = Match(id=f"m{i}", code=f"CODE{i:02d}", mode=mode, host=players[0], created_at=at, updated_at=at,
               settings=MatchSettings(deck=deck), players=[MatchPlayer(id=p, name=p.upper()) for p in players])
-    m.start("SEED", ["r1", "r2"] if mode == "pvp" else ["r1", "r1"], at)
+    m.start("SEED", [f"r{i}a", f"r{i}b"] if mode == "pvp" else [f"run{i}", f"run{i}"], at)
     m.finish(winner, result, at)
     m.summary = summary or {"ante": 1, "rounds": 1, "players": []}
     return m
@@ -47,8 +47,20 @@ MATCHES = [
 ]
 
 
+def stats(i: int, best: float, ante: int, rnd: int, money: float, bosses: int, won: bool = False) -> RunSummary:
+    at = NOW + timedelta(minutes=i)
+    return RunSummary(id=f"run{i}", settings=GameSettings(seed="SEED", mode="coop", mode_rules=3), version=10,
+                      progress=Progress(Phase.SHOP if won else Phase.GAME_OVER, ante, rnd, 0, won), created_at=at,
+                      updated_at=at, stats=RunStats(best_hand=best, furthest_ante=ante, furthest_round=rnd,
+                                                    most_money=money, boss_streak=bosses))
+
+
+# the coop runs' stats (match 8's run isn't known: its summary stands in)
+RUNS = {r.id: r for r in [stats(6, 2000, 3, 9, 40, 2), stats(7, 1500, 5, 14, 95, 4, won=True)]}
+
+
 def board(name: str, caller: str = "ann", limit: int = 50) -> Any:
-    return multiplayer_leaderboard(MATCHES, name, caller, limit)  # type: ignore[arg-type]
+    return multiplayer_leaderboard(MATCHES, name, caller, limit, RUNS)  # type: ignore[arg-type]
 
 
 def ids(entry: Any) -> list[str]:
@@ -65,23 +77,36 @@ def test_pvp_boards():
     assert [(ids(e), e.value) for e in hits.entries] == [(["bob"], 30), (["ann"], 12)]
 
 
-def test_coop_boards():
-    ante = board("coop_ante")
-    # pairs, whatever their seats; ties on the ante broken by the rounds
-    assert [(ids(e), e.value, e.rounds, e.played, e.rank) for e in ante.entries] == [
-        (["cy", "dee"], 5, 15, 1, 1), (["ann", "bob"], 5, 14, 2, 2)]
-    assert ante.you is not None and ids(ante.you) == ["ann", "bob"] and ante.you.rank == 2
-    assert [(ids(e), e.value) for e in board("coop_wins").entries] == [(["ann"], 1), (["bob"], 1)]
-    assert all(e.rank == 1 for e in board("coop_wins").entries)  # (tied values share a rank)
+def test_coop_boards_rank_pairs():
+    assert coop_run_ids(MATCHES) == ["run6", "run7", "run8"]
     best = board("coop_best_hand")
-    assert [(ids(e), e.value, e.hand) for e in best.entries] == [(["bob"], 2000, "Flush"), (["cy"], 800, "Flush"),
-                                                                 (["ann"], 500, "Flush")]
+    # the pair's best hand: either player's, in any of their runs together
+    assert [(ids(e), e.value, e.hand, e.played) for e in best.entries] == [
+        (["ann", "bob"], 2000, "Flush", 2), (["cy", "dee"], 800, "Flush", 1)]
+    assert best.players == 2 and best.you is not None and ids(best.you) == ["ann", "bob"]
+    ante = board("coop_ante")
+    # whatever their seats; ties on the ante broken by the rounds
+    assert [(ids(e), e.value, e.rounds, e.rank) for e in ante.entries] == [
+        (["cy", "dee"], 5, 15, 1), (["ann", "bob"], 5, 14, 2)]
+    assert [(ids(e), e.value) for e in board("coop_round").entries] == [(["cy", "dee"], 15), (["ann", "bob"], 14)]
+    # money and bosses in a row: the runs' own stats (an unknown run has none)
+    assert [(ids(e), e.value) for e in board("coop_money").entries] == [(["ann", "bob"], 95)]
+    assert [(ids(e), e.value) for e in board("coop_boss_streak").entries] == [(["ann", "bob"], 4)]
+    wins = board("coop_wins")
+    assert [(ids(e), e.value, e.played) for e in wins.entries] == [(["ann", "bob"], 1, 2)]
 
 
 def test_the_caller_outside_the_top():
-    b = board("coop_best_hand", limit=1)
-    assert len(b.entries) == 1 and b.you is not None and b.you.rank == 3 and ids(b.you) == ["ann"]
+    b = board("coop_round", limit=1)
+    assert len(b.entries) == 1 and b.you is not None and b.you.rank == 2 and ids(b.you) == ["ann", "bob"]
     assert board("pvp_wins", caller="dee").you is None
+
+
+def test_without_the_runs_the_summaries_stand_in():
+    b = multiplayer_leaderboard(MATCHES, "coop_best_hand", "ann")
+    assert [(ids(e), e.value) for e in b.entries] == [(["ann", "bob"], 2000), (["cy", "dee"], 800)]
+    assert multiplayer_leaderboard(MATCHES, "coop_wins", "ann").entries[0].value == 1
+    assert multiplayer_leaderboard(MATCHES, "coop_money", "ann").entries == []
 
 
 def test_global_stats():

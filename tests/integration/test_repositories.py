@@ -56,6 +56,7 @@ def test_round_trip(repo):
     assert got.commands[1].as_dict() == {"cmd": "play", "cards": [0, 2]}
     assert got.stats == STATS and got.debug and got.settings.seeded and got.owner_name == "Alice"
     assert [s.stats for s in repo.runs_of("p1")] == [STATS]
+    assert [s.stats for s in repo.run_summaries(["a", "nope", "a"])] == [STATS] and repo.run_summaries([]) == []
 
 
 def test_huge_scores(repo):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import copy
 import threading
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -109,6 +110,10 @@ class InMemoryGameRepository:
     def runs_of(self, owner: str) -> builtins.list[RunSummary]:
         with self._lock:
             return sorted((r.summary() for r in self._runs.values() if r.owned_by(owner)), key=lambda r: r.updated_at)
+
+    def run_summaries(self, ids: Sequence[str]) -> builtins.list[RunSummary]:
+        with self._lock:
+            return [self._runs[i].summary() for i in dict.fromkeys(ids) if i in self._runs]
 
     def _all(self) -> builtins.list[RunSummary]:
         with self._lock:

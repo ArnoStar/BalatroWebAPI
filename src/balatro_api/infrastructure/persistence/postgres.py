@@ -424,6 +424,13 @@ class PostgresGameRepository:
                                 (owner,)).fetchall()
         return [self._summary(r) for r in rows]
 
+    def run_summaries(self, ids: Sequence[str]) -> builtins.list[RunSummary]:
+        if not ids:
+            return []
+        with self._tx() as conn:
+            rows = conn.execute(sql.SQL("{} WHERE id = ANY(%s)").format(SELECT_RUNS), (list(set(ids)),)).fetchall()
+        return [self._summary(r) for r in rows]
+
     # ------------------------------------------------------------ matches
     @staticmethod
     def _match(row: DictRow) -> Match:
