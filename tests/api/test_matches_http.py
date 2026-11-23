@@ -384,3 +384,12 @@ def test_coop_decks_and_summary(app):
     assert ann["best_hand_name"] and bob["hands"] == 0
     st = call(app, "bob", "GET", "/matches/stats")
     assert st["coop"]["played"] == 1 and st["partners"][0]["name"] == "ann" and st["pvp"]["played"] == 0
+
+
+def test_a_pvp_runs_history_imports_with_its_rules(app):
+    # (a bug report's run seen again: its commands replay by the PvP mode's rules, or not at all)
+    a, _ = started(app)
+    history = call(app, "ann", "GET", f"/games/{a['run_id']}/history")
+    assert history["settings"]["mode"] == "pvp"
+    copy = call(app, "ann", "POST", "/games/import", 201, **history)
+    assert copy["settings"]["mode"] == "pvp" and copy["id"] != a["run_id"]

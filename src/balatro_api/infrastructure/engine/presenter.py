@@ -202,7 +202,8 @@ def _skip_tag(G: Game, slot: str, key: str) -> TagView:
 
 
 def blind_select_view(G: Game) -> BlindSelectView | None:
-    if G.STATE != STATES.BLIND_SELECT:
+    # every phase of a run: Run Info shows the ante's blinds from the shop and the round too
+    if G.STATE == STATES.GAME_OVER or not G.GAME.round_resets.blind_choices.get("Boss"):
         return None
     GAME = G.GAME
     rr = GAME.round_resets
@@ -277,7 +278,10 @@ def info_view(G: Game) -> RunInfo:
                    interest_amount=GAME.interest_amount, interest_cap=GAME.interest_cap,
                    discount_percent=GAME.discount_percent, bankrupt_at=GAME.bankrupt_at, skips=GAME.skips or 0,
                    hands_played=GAME.hands_played or 0, unused_discards=GAME.unused_discards or 0,
-                   round_targets=targets)
+                   round_targets=targets,
+                   consumable_usage_total={str(k): int(v) for k, v in (GAME.consumeable_usage_total or {}).items()},
+                   consumable_usage={str(k): int(u.count) for k, u in GAME.consumeable_usage.items()},
+                   ecto_minus=int(GAME.ecto_minus or 1))
 
 
 def coop_view(G: Game, seat: int | None) -> CoopView | None:

@@ -321,8 +321,8 @@ commands; otherwise `403 import_forbidden`.
 
 **Body**: a history as `GET /games/{id}/history` gives it (extra fields are
 ignored), possibly with fewer commands: `{"settings": {"seed", "deck",
-"stake", "challenge", "game_speed"}, "commands": [...]}`. The commands are
-replayed with the engine; the first that doesn't replay is `409
+"stake", "challenge", "game_speed", "mode"}, "commands": [...]}`. The commands are
+replayed with the engine, by the rules of the run's `mode` (a PvP or coop run's); the first that doesn't replay is `409
 illegal_action` ("command #n doesn't replay"). **Response** `201`: the
 GameView, at version = the number of commands. The new run is seeded and
 counts as a debug run: it never counts for statistics.

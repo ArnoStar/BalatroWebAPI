@@ -209,6 +209,7 @@ class ImportSettings(BaseModel):
     game_speed: float = Field(1, json_schema_extra={"enum": [0.5, 1, 2, 4]})
     seeded: bool = True
     mods: list[dict[str, Any]] = Field(default_factory=list, max_length=16)
+    mode: str | None = Field(None, description="a multiplayer run's rules (pvp, coop): its commands replay by them")
 
 
 class ImportGameRequest(BaseModel):
@@ -229,7 +230,8 @@ class ImportGameRequest(BaseModel):
         return ImportedRun(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge,
                            game_speed=float(s.game_speed), commands=tuple(self.commands),
                            seeded=s.seeded if self.start_profile is not None else True,
-                           start_profile=self.start_profile, mods=tuple(s.mods), mod_packages=self.mod_packages)
+                           start_profile=self.start_profile, mods=tuple(s.mods), mod_packages=self.mod_packages,
+                           mode=s.mode)
 
 
 class CreativeRequest(BaseModel):
