@@ -254,6 +254,14 @@ discards in coop). Then:
 - `GET /matches/stats`: PvP wins, losses, streaks and damage, coop runs,
   antes and chips, and the players they played most with. A public profile
   (`GET /players/{id}`) has them too, with the latest matches.
+- `GET /matches/leaderboards/{board}` (`limit`): the best of everyone's
+  finished matches, with the caller's entry in `you`: `pvp_wins`,
+  `pvp_streak` (PvP matches won in a row), `pvp_biggest_hit`, `coop_ante`
+  (coop pairs, by the ante their run reached, then its rounds), `coop_wins`,
+  `coop_best_hand`.
+- `GET /matches/stats/global`: everyone's finished matches together (PvP and
+  coop counts, antes, damage, chips, the decks played, matches by day for the
+  last 30 days). Both come from the matches' summaries (nothing replayed).
 - `GET /games/{id}/coop/decks`: a rules-1 coop run's two decks (each
   player's cards and those still to draw), for the deck view (empty with one
   deck: the run's deck view has it).

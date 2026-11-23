@@ -278,6 +278,7 @@ def test_finished_matches(repo):
     assert [m.id for m in repo.finished_matches("p2", limit=2)] == ["f2", "f1"]
     assert [m.id for m in repo.finished_matches("p1", before=T0 + timedelta(minutes=2))] == ["f1", "f0"]
     assert repo.finished_matches("p3") == []
+    assert [m.id for m in repo.all_finished_matches()] == ["f2", "f1", "f0"]
     got = repo.finished_matches("p1")[0]
     assert got.summary == {"ante": 2, "rounds": 1, "players": []} and got.rematch_id == "next" and got.kicked == ["p9"]
 

@@ -1294,6 +1294,93 @@ class MultiplayerStats:
     partners: list[MatchOpponentStats]  # coop partners, most played first
 
 
+MultiplayerBoardName = Literal["pvp_wins", "pvp_streak", "pvp_biggest_hit", "coop_ante", "coop_wins", "coop_best_hand"]
+MULTIPLAYER_BOARDS: tuple[MultiplayerBoardName, ...] = (
+    "pvp_wins", "pvp_streak", "pvp_biggest_hit", "coop_ante", "coop_wins", "coop_best_hand")
+
+
+@dataclass(frozen=True, kw_only=True)
+class MultiplayerBoardPlayer:
+    id: str  # their profile (GET /players/{id})
+    name: str | None  # their display name
+    you: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class MultiplayerLeaderboardEntry:
+    """A player's best (for ``coop_ante``: a pair of coop partners' best run together)."""
+
+    rank: int  # 1 = the best; tied values share a rank
+    players: list[MultiplayerBoardPlayer]  # the player, or the coop pair (coop_ante)
+    you: bool  # the caller is one of them
+    value: Score  # wins, matches won in a row, hit points, an ante, chips: as the board says
+    played: int  # the matches of the board's mode they played (the pair: together)
+    rounds: int | None = None  # coop_ante: the rounds that run went (ties broken by them)
+    hand: str | None = None  # coop_best_hand: the poker hand
+    achieved_at: datetime  # when the value was reached (wins: the latest win)
+
+
+@dataclass(frozen=True, kw_only=True)
+class MultiplayerLeaderboard:
+    """The best of everyone's finished multiplayer matches: PvP wins, best win streak, biggest hit;
+    coop pairs by the ante their run reached, coop runs won, best single coop hand."""
+
+    board: MultiplayerBoardName
+    players: int  # entries on the board (players, or pairs for coop_ante)
+    entries: list[MultiplayerLeaderboardEntry]  # the top ones
+    you: MultiplayerLeaderboardEntry | None  # the caller's best entry, even outside the top (None: not on it)
+
+
+@dataclass(frozen=True, kw_only=True)
+class PvPGlobalStats:
+    matches: int = 0
+    drawn: int = 0
+    left: int = 0  # matches that ended with a player leaving
+    rounds: int = 0  # PvP blinds played, all matches
+    best_ante: int = 0
+    average_ante: float = 0.0
+    damage: int = 0  # hit points lost, all players
+    biggest_hit: int = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class CoopGlobalStats:
+    matches: int = 0
+    runs_won: int = 0
+    best_ante: int = 0
+    average_ante: float = 0.0
+    hands: int = 0  # hands played, all players
+    chips: Score = 0
+    best_hand: Score = 0
+    best_hand_name: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchDeckCount:
+    deck: str
+    pvp: int
+    coop: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class MatchDayCount:
+    day: str  # YYYY-MM-DD (UTC)
+    pvp: int
+    coop: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class MultiplayerGlobalStats:
+    """Everyone's finished multiplayer matches together."""
+
+    players: int  # players who finished a match
+    matches: int
+    pvp: PvPGlobalStats
+    coop: CoopGlobalStats
+    decks: list[MatchDeckCount]  # by matches
+    days: list[MatchDayCount]  # the last 30 days, oldest first
+
+
 @dataclass(frozen=True, kw_only=True)
 class CoopDeckView:
     """A coop player's deck: all their playing cards, and those still to draw (by suit and rank, never in order)."""

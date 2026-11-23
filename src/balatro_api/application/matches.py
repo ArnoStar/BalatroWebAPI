@@ -75,6 +75,9 @@ from .dto import (
     MatchSummaryPlayer,
     MatchSummaryView,
     MatchView,
+    MultiplayerBoardName,
+    MultiplayerGlobalStats,
+    MultiplayerLeaderboard,
     MultiplayerStats,
     NewMatch,
     Player,
@@ -84,6 +87,7 @@ from .dto import (
     RematchView,
 )
 from .locks import RunLocks
+from .multiplayer_boards import multiplayer_global_stats, multiplayer_leaderboard
 from .ports import Clock, GameEngine, GameRepository, IdGenerator, MatchRecord, MatchRepository, PvPState
 from .statistics import score
 
@@ -797,3 +801,23 @@ class GetMultiplayerStats:
 
     def __call__(self, player: Player) -> MultiplayerStats:
         return multiplayer_stats(self.m.matches.finished_matches(player.id), player.id)
+
+
+class GetMultiplayerLeaderboard:
+    """The best of everyone's finished matches on a board (MultiplayerBoardName)."""
+
+    def __init__(self, matches: Matches) -> None:
+        self.m = matches
+
+    def __call__(self, player: Player, board: MultiplayerBoardName, limit: int = 50) -> MultiplayerLeaderboard:
+        return multiplayer_leaderboard(self.m.matches.all_finished_matches(), board, player.id, limit)
+
+
+class GetMultiplayerGlobalStats:
+    """Everyone's finished matches together."""
+
+    def __init__(self, matches: Matches) -> None:
+        self.m = matches
+
+    def __call__(self, player: Player) -> MultiplayerGlobalStats:
+        return multiplayer_global_stats(self.m.matches.all_finished_matches(), self.m.clock.now())

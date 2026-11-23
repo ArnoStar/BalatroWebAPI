@@ -482,6 +482,12 @@ class PostgresGameRepository:
                                 (player_id, before, before, limit)).fetchall()
         return [self._match(r) for r in rows]
 
+    def all_finished_matches(self) -> builtins.list[Match]:
+        with self._tx() as conn:
+            rows = conn.execute("SELECT * FROM matches WHERE status = 'finished' "
+                                "AND coalesce(doc->>'result', '') <> 'closed' ORDER BY updated_at DESC").fetchall()
+        return [self._match(r) for r in rows]
+
     # ------------------------------------------------------------ everyone
     def leaderboard(self, board: LeaderboardName, deck: str | None, stake: int | None, limit: int,
                     owner: str) -> BoardPage:
