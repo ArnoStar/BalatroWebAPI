@@ -210,8 +210,10 @@ the engine's coop rules (`settings.mode: "coop"`, `balatro.mods.coop`): one
 deck and hand for both, the jokers shared (10 slots, 5 each: all count, each
 player sells and moves only theirs, `CardView.owner`), hands and hand levels
 shared, discards doubled, blinds growing much faster. A run keeps the version
-of the rules it was started with (`settings.mode_rules`: 2 since 2026-11-23;
-1 or none, the runs before: a deck each, slowly growing blinds), so it
+of the rules it was started with (`settings.mode_rules`: 3 since engine
+0.9.1, 2026-11-23: an ask to leave the shop holds while the other player
+opens a pack; 2, engine 0.9.0: such a pack dropped it; 1 or none, the runs
+before: a deck each, slowly growing blinds), so it
 replays as it was played; send it back when importing a history. The partner
 plays the host's run with the run routes too (they're a member of its
 match); each action is played for the caller's seat (`GameView.coop.seat`),
