@@ -289,10 +289,13 @@ def coop_view(G: Game, seat: int | None) -> CoopView | None:
     if m is None:
         return None
     st = m.state()
+    stats = st.get("stats", [])
+    shared = st.get("decks_mode") == "shared"
+    # (one deck for both: each seat's numbers with the deck and the hand)
+    decks = [{"remaining": len(G.deck.cards), "hand": len(G.hand.cards)}] * len(stats) if shared else st["decks"]
     return CoopView(seat=seat, turn=st["turn"], your_turn=seat == st["turn"], joker_slots=st["limits"],
-                    shop_votes=st["shop_votes"], pack_seat=st["pack_seat"],
-                    seats=[coop_seat(d, st.get("stats", [])[i] if i < len(st.get("stats", [])) else {})
-                           for i, d in enumerate(st["decks"])])
+                    shop_votes=st["shop_votes"], pack_seat=st["pack_seat"], shared_deck=shared,
+                    seats=[coop_seat(d, stats[i] if i < len(stats) else {}) for i, d in enumerate(decks)])
 
 
 def coop_seat(deck: dict[str, Any], stats: dict[str, Any]) -> CoopSeatView:
@@ -311,7 +314,7 @@ def game_view(run: Run, G: Game, seat: int | None = None) -> GameView:
         id=run.id,
         version=run.version,
         settings=SettingsView(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
-                              seeded=s.seeded, mode=s.mode,
+                              seeded=s.seeded, mode=s.mode, mode_rules=s.mode_rules,
                               mods=[ModRefView(id=m.id, version=m.version, hash=m.hash, name=m.name,
                                                creative=m.creative) for m in s.mods]),
         phase=phase(G),
@@ -364,9 +367,11 @@ def opponent_view(run: Run, G: Game) -> OpponentView:
 
 # ------------------------------------------------------------------ feedback
 def _find_card(G: Game, card_id: int) -> tuple[Any, str] | None:
-    """A card of the run by sort_id, with its area's name."""
+    """A card of the run by sort_id, with its area's name (a coop run with a deck each: either player's)."""
+    coop = G.mod("coop")
+    seats = [a for s in getattr(coop, "seats", ()) for a in (s.hand, s.deck, s.discard)]
     for area in (G.hand, G.deck, G.play, G.discard, G.jokers, G.consumeables, G.pack_cards, G.shop_jokers,
-                 G.shop_vouchers, G.shop_booster):
+                 G.shop_vouchers, G.shop_booster, *seats):
         if area is None or area.removed:
             continue
         for c in area.cards:
@@ -405,7 +410,7 @@ def feedback_events(entries: list[dict[str, Any]], G: Game | None = None) -> lis
             out.append(CardFlippedEvent(t=t, card=e["card"], face_down=face_down, view=view))
         elif kind == "card_juiced":
             out.append(CardJuicedEvent(t=t, card=e["card"], scale=e.get("scale", 0.7), rot=e.get("rot")))
-        elif kind == "card_changed" and e["change"] in ("edition", "seal"):
+        elif kind == "card_changed" and e["change"] in ("edition", "seal", "enhancement"):
             found = _find_card(G, e["card"]) if G is not None else None
             out.append(CardChangedEvent(t=t, card=e["card"], change=e["change"],
                                         view=card_view(G, found[0], found[1], face_up=True) if G is not None and found

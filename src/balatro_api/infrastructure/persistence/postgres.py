@@ -188,12 +188,16 @@ MIGRATIONS: tuple[str, ...] = (
         PRIMARY KEY (mod_id, player)
     );
     """,
+    # 7: which version of its mode's rules a multiplayer run is played with (null: the mode's first)
+    """
+    ALTER TABLE runs ADD COLUMN mode_rules SMALLINT;
+    """,
 )
 
 RUN_COLUMNS = ("id", "owner", "seed", "seeded", "deck", "stake", "challenge", "game_speed", "engine_version", "version",
                "phase", "ante", "round", "dollars", "won", "debug", "best_hand", "furthest_ante", "furthest_round",
                "most_money", "boss_streak", "stats", "created_at", "updated_at", "replay", "tracks_progress", "mode",
-               "match_id", "mods")
+               "match_id", "mods", "mode_rules")
 SELECT_RUNS = sql.SQL("SELECT {} FROM runs").format(sql.SQL(", ").join(sql.Identifier(c) for c in RUN_COLUMNS))
 BOARD_COLUMNS = {"best_hand": "best_hand", "highest_ante": "furthest_ante", "highest_round": "furthest_round",
                  "most_money": "most_money", "boss_streak": "boss_streak"}
@@ -268,6 +272,7 @@ class PostgresGameRepository:
     def _summary(row: DictRow) -> RunSummary:
         settings = GameSettings(seed=row["seed"], deck=row["deck"], stake=row["stake"], challenge=row["challenge"],
                                 game_speed=row["game_speed"], seeded=row["seeded"], mode=row["mode"],
+                                mode_rules=row["mode_rules"],
                                 mods=tuple(ModRef.from_json(m) for m in row["mods"] or ()))
         progress = Progress(phase=Phase(row["phase"]), ante=row["ante"], round=row["round"], dollars=row["dollars"],
                             won=row["won"])
@@ -307,7 +312,8 @@ class PostgresGameRepository:
         values = {"id": run.id, "owner": run.owner, "seed": s.seed, "seeded": s.seeded, "deck": s.deck,
                   "stake": s.stake, "challenge": s.challenge, "game_speed": s.game_speed,
                   "engine_version": run.engine_version, "created_at": run.created_at, "replay": run.replay,
-                  "mode": s.mode, "match_id": run.match_id, "mods": Jsonb([m.to_json() for m in s.mods]),
+                  "mode": s.mode, "mode_rules": s.mode_rules, "match_id": run.match_id,
+                  "mods": Jsonb([m.to_json() for m in s.mods]),
                   "start_profile": Jsonb(run.start_profile) if run.start_profile is not None else None,
                   "tracks_progress": run.tracks_progress, **self._cached(run)}
         query = sql.SQL("INSERT INTO runs ({}) VALUES ({})").format(

@@ -45,6 +45,9 @@ class FakeEngine:
     def random_seed(self) -> str:
         return "RANDOM12"
 
+    def latest_mode_rules(self, mode: str) -> int | None:
+        return 2 if mode == "coop" else None
+
     def check_settings(self, settings: GameSettings, mod_packages: dict[str, Any] | None = None) -> GameSettings:
         return settings
 

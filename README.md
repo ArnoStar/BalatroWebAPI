@@ -128,7 +128,7 @@ is the time in seconds at which the game shows it (at the run's game speed,
 | `card_moved` | a card arrives in an area (`to`: `hand`, `play`, `discard`, `jokers` ...) |
 | `card_flipped`, `card_removed` | a card turns over (face up: with its `view`), a card leaves the game |
 | `card_juiced` | a card wiggles (`card`, `scale`, `rot`): the joker behind a scored or held card's effect, the Uncommon Joker Baseball Card multiplies, a card Midas Mask or Vampire changes |
-| `card_changed` | a card shines with its new `edition` or `seal` (`change`), with its `view` |
+| `card_changed` | a card shines with its new `edition` or `seal`, or shows its new `enhancement` (`change`: Midas Mask, Vampire), with its `view` |
 | `attention_text` | a big text over a card (`key`: `k_nope_ex`, The Wheel of Fortune's "Nope!") |
 | `hand` | the scoring panel: `hand`, `level`, `chips`, `mult`, `hand_score` (only what changes) |
 | `card_text` | a pop-up over a card: `effect` (`chips`, `mult`, `x_mult`, `dollars`, `again`, `debuffed`, `message` ...) and `amount` |
@@ -206,20 +206,27 @@ or two) shows the rest:
   ends for good, or a player leaves (`POST /matches/{id}/leave`).
 
 **Coop.** Both players play one run (`run_id`, the host's), in turns, with
-the engine's coop rules (`settings.mode: "coop"`, `balatro.mods.coop`): a deck
-each, the jokers shared (10 slots, 5 each: all count, each player sells and
-moves only theirs, `CardView.owner`), hands and hand levels shared, discards
-doubled, blinds growing faster. The partner plays the host's run with the run
-routes too (they're a member of its match); each action is played for the
-caller's seat (`GameView.coop.seat`), and the legal actions are theirs:
+the engine's coop rules (`settings.mode: "coop"`, `balatro.mods.coop`): one
+deck and hand for both, the jokers shared (10 slots, 5 each: all count, each
+player sells and moves only theirs, `CardView.owner`), hands and hand levels
+shared, discards doubled, blinds growing much faster. A run keeps the version
+of the rules it was started with (`settings.mode_rules`: 2 since 2026-11-23;
+1 or none, the runs before: a deck each, slowly growing blinds), so it
+replays as it was played; send it back when importing a history. The partner
+plays the host's run with the run routes too (they're a member of its
+match); each action is played for the caller's seat (`GameView.coop.seat`),
+and the legal actions are theirs:
 
 - `GameView.coop`: whose turn it is, both halves of the jokers, who has asked
-  to leave the shop, who opened the pack on screen, both decks' sizes. The
-  turn passes after each hand played; the other player's hand comes up (event
-  `turn`). A round starts with the player who didn't play last.
+  to leave the shop, who opened the pack on screen (they pick from it and
+  select the hand's cards for it), the deck's size (`shared_deck`; rules 1:
+  both decks' sizes). The turn passes after each hand played (event `turn`):
+  the other player goes on with the hand (rules 1: their own hand comes up). A
+  round starts with the player who didn't play last.
 - The shop is left once both have played `end_shop` (event `shop_vote` for
   the first one).
-- Watching: the player whose turn it is sends the cards they select
+- Watching: the player whose turn it is (or the pack's opener, while it is
+  open: `coop.selecting`) sends the cards they select
   (`PUT /matches/{id}/selection`, 204); the match view has them
   (`coop.selection`, `coop.selection_seq`). `GET /matches/{id}/steps?since=`
   gives the run's actions from that version on, with their events and views,
@@ -245,8 +252,9 @@ discards in coop). Then:
 - `GET /matches/stats`: PvP wins, losses, streaks and damage, coop runs,
   antes and chips, and the players they played most with. A public profile
   (`GET /players/{id}`) has them too, with the latest matches.
-- `GET /games/{id}/coop/decks`: a coop run's two decks (each player's cards
-  and those still to draw), for the deck view.
+- `GET /games/{id}/coop/decks`: a rules-1 coop run's two decks (each
+  player's cards and those still to draw), for the deck view (empty with one
+  deck: the run's deck view has it).
 
 Match runs aren't listed with the player's runs and don't count for
 statistics. Without sign-in (development), a caller may name itself with the

@@ -21,6 +21,7 @@ from typing import Any
 import balatro
 from balatro import DECK_NAMES, Game, Profile
 from balatro.data import load
+from balatro.mods import coop as coop_rules
 from balatro.mods import pvp as pvp_rules
 from balatro.mods.content import ContentMod, ModError, extend_data
 from balatro.mods.coop import Coop
@@ -84,6 +85,17 @@ class BalatroEngine:
     def random_seed(self) -> str:
         return "".join(random.SystemRandom().choice(SEED_ALPHABET) for _ in range(8))
 
+    def latest_mode_rules(self, mode: str) -> int | None:
+        return coop_rules.LATEST_RULES if mode == "coop" else None
+
+    @staticmethod
+    def _mode_mod(s: GameSettings) -> str | dict[str, Any]:
+        """The engine's mod of a multiplayer run, with the rules it is played by (a coop run from before its
+        rules had versions: the first)."""
+        if s.mode == "coop":
+            return {"key": "coop", "rules": s.mode_rules or 1}
+        return str(s.mode)
+
     @staticmethod
     def _content(settings: GameSettings, mod_packages: dict[str, dict[str, Any]] | None) -> list[dict[str, Any]]:
         packages = mod_packages or {}
@@ -112,16 +124,19 @@ class BalatroEngine:
             deck = DECK_NAMES.get(deck.lower(), deck)
             if deck not in {c.key for c in data.P_CENTER_POOLS["Back"]}:
                 raise InvalidGameSettings(f"unknown deck {settings.deck!r}")
+        if settings.mode_rules is not None and settings.mode_rules not in (
+                coop_rules.RULES if settings.mode == "coop" else (1,)):
+            raise InvalidGameSettings(f"no version {settings.mode_rules} of {settings.mode}'s rules")
         return GameSettings(seed=normalize_seed(settings.seed), deck=deck, stake=stake, challenge=settings.challenge,
                             game_speed=settings.game_speed, seeded=settings.seeded, mode=settings.mode,
-                            mods=settings.mods)
+                            mode_rules=settings.mode_rules, mods=settings.mods)
 
     # ------------------------------------------------------------ games
     @classmethod
     def _new_game(cls, s: GameSettings, start_profile: dict[str, Any] | None,
                   mod_packages: dict[str, dict[str, Any]] | None = None) -> Game:
         # a run from before progress was kept: fully unlocked, and played as the engine played every run then
-        mods: list[Any] | None = [s.mode] if s.mode else None  # a multiplayer mode's rules (the engine's mods)
+        mods: list[Any] | None = [cls._mode_mod(s)] if s.mode else None  # a multiplayer mode's rules (an engine mod)
         if s.mods:  # content mods (their packages, in the run's order)
             mods = (mods or []) + cls._content(s, mod_packages)
         if start_profile is None:
@@ -368,6 +383,7 @@ class BalatroEngine:
             coop = G.mod("coop")
             if not isinstance(coop, Coop):
                 return CoopDecksView(seats=[])
+            # (one deck for both: the run's own deck view has it)
             return CoopDecksView(seats=[
                 CoopDeckView(seat=i, full_deck=presenter.deck_cards(coop.seat_cards(i)),
                              remaining=presenter.deck_cards(seat.deck.cards))

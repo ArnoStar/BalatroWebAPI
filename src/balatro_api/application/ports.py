@@ -89,6 +89,11 @@ class GameEngine(Protocol):
 
     def random_seed(self) -> str: ...
 
+    def latest_mode_rules(self, mode: str) -> int | None:
+        """The version of a multiplayer mode's rules a new run is played with (``GameSettings.mode_rules``);
+        None: the mode has one."""
+        ...
+
     def check_settings(self, settings: GameSettings,
                        mod_packages: dict[str, dict[str, Any]] | None = None) -> GameSettings:
         """The settings the game will actually use (seed as the game reads

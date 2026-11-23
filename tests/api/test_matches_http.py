@@ -226,6 +226,7 @@ def test_coop_is_one_run_played_in_turns(app):
     g_ann = call(app, "ann", "GET", f"/games/{run}")
     g_bob = call(app, "bob", "GET", f"/games/{run}")
     assert g_ann["settings"]["mode"] == "coop" and g_ann["joker_slots"] == 10 and g_ann["discards_left"] == 8
+    assert g_ann["settings"]["mode_rules"] == 2 and g_ann["coop"]["shared_deck"]  # (one deck for both)
     assert g_ann["coop"]["seat"] == 0 and g_bob["coop"]["seat"] == 1
     assert "select_blind" in [x["type"] for x in g_ann["actions"]]
     assert "select_blind" not in [x["type"] for x in g_bob["actions"]]
@@ -236,7 +237,8 @@ def test_coop_is_one_run_played_in_turns(app):
     act(app, "bob", run, 409, type="play", cards=hand[:1])
     result = act(app, "ann", run, type="play", cards=hand[:5])
     assert result["game"]["coop"]["turn"] == 1 and any(e["type"] == "turn" for e in result["events"])
-    assert not set(hand) & {c["id"] for c in result["game"]["hand"]}  # (bob's own cards now)
+    assert set(hand[5:]) <= {c["id"] for c in result["game"]["hand"]}  # (bob goes on with the hand)
+    assert [s["deck"] for s in result["game"]["coop"]["seats"]] == [result["game"]["deck"]["remaining"]] * 2
     # bob watches: the steps since his version, and ann's selection on her turns
     steps = call(app, "bob", "GET", f"/matches/{a['id']}/steps?since=0")
     assert steps["complete"] and [s["action"]["type"] for s in steps["steps"]] == ["select_blind", "play"]
@@ -252,6 +254,40 @@ def test_coop_is_one_run_played_in_turns(app):
         g = act(app, who, run, type="play", cards=[g["hand"][0]["id"]])["game"]
     m = call(app, "bob", "GET", f"/matches/{a['id']}")
     assert g["phase"] == "game_over" and m["status"] == "finished" and m["result"]["reason"] == "game_over"
+
+
+def test_coop_pack_selection_is_its_openers(app):
+    a, _ = coop_started(app)
+    run = a["run_id"]
+    act(app, "ann", run, type="select_blind")
+    call(app, "ann", "POST", f"/games/{run}/debug", command={"cmd": "cheat", "win": True, "dollars": 100})
+    g = act(app, "ann", run, type="cash_out")["game"]
+    pack = g["shop"]["boosters"][0]["id"]
+    g = act(app, "bob", run, type="buy", card=pack)["game"]  # (ann's turn, bob's pack)
+    assert g["phase"] == "pack" and g["coop"]["pack_seat"] == 1
+    call(app, "bob", "PUT", f"/matches/{a['id']}/selection", 204, cards=[1, 2])
+    m = call(app, "ann", "GET", f"/matches/{a['id']}")
+    assert m["coop"]["selecting"] == 1 and m["coop"]["selection"] == [1, 2] and m["coop"]["turn"] == 0
+
+
+def test_a_coop_run_replays_with_its_rules(app):
+    """A coop run from before its rules had versions (mode_rules none: a deck each) imports and replays as it was
+    played; the rules come back with its history."""
+    a, _ = coop_started(app)
+    h = call(app, "ann", "GET", f"/games/{a['run_id']}/history")
+    assert h["settings"]["mode_rules"] == 2
+    old = {**h, "settings": {**h["settings"], "mode_rules": None}}
+    g = call(app, "ann", "POST", "/games/import", 201, **old)
+    g = act(app, "ann", g["id"], type="select_blind")["game"]
+    hand = [c["id"] for c in g["hand"]]
+    g = act(app, "ann", g["id"], type="play", cards=hand[:5])["game"]
+    assert g["settings"]["mode_rules"] is None and not g["coop"]["shared_deck"]
+    assert not set(hand) & {c["id"] for c in g["hand"]}  # (the other player's own deck)
+    decks = call(app, "ann", "GET", f"/games/{g['id']}/coop/decks")["seats"]
+    assert [len(d["full_deck"]) for d in decks] == [52, 52] and len(decks[0]["remaining"]) == 52 - 8 - 5
+    assert len(decks[1]["remaining"]) == 44 and "id" not in decks[0]["full_deck"][0]
+    call(app, "ann", "POST", "/games/import", 422, **{**h, "settings": {**h["settings"], "mode_rules": 0}})
+    call(app, "ann", "POST", "/games/import", 422, **{**h, "settings": {**h["settings"], "mode_rules": 9}})
 
 
 def test_coop_shop_is_left_together(app):
@@ -356,20 +392,16 @@ def test_emotes(app, clock):
 def test_coop_decks_and_summary(app):
     a, _ = coop_started(app)
     run = a["run_id"]
-    decks = call(app, "bob", "GET", f"/games/{run}/coop/decks")["seats"]
-    assert [len(d["full_deck"]) for d in decks] == [52, 52] and [len(d["remaining"]) for d in decks] == [52, 52]
+    assert call(app, "bob", "GET", f"/games/{run}/coop/decks")["seats"] == []  # (one deck: the run's deck view)
     call(app, "cy", "GET", f"/games/{run}/coop/decks", 404)
     act(app, "ann", run, type="select_blind")
     g = call(app, "ann", "GET", f"/games/{run}")
     act(app, "ann", run, type="discard", cards=[g["hand"][0]["id"]])
     g = call(app, "ann", "GET", f"/games/{run}")
     act(app, "ann", run, type="play", cards=[c["id"] for c in g["hand"][:5]])
-    decks = call(app, "ann", "GET", f"/games/{run}/coop/decks")["seats"]
-    assert len(decks[0]["remaining"]) == 52 - 8 - 1 - 5 and len(decks[1]["remaining"]) == 44
     seats = call(app, "bob", "GET", f"/games/{run}")["coop"]["seats"]
     assert seats[0]["hands"] == 1 and seats[0]["discards"] == 1 and seats[0]["best_hand_name"]
-    assert seats[1]["hands"] == 0
-    assert "id" not in decks[0]["full_deck"][0]
+    assert seats[1]["hands"] == 0 and seats[0]["deck"] == seats[1]["deck"] == 52 - 8 - 1 - 5
     act(app, "bob", run, type="sort", mode="suit")  # (the partner's action keeps the owner's name)
     assert call(app, "cy", "GET", "/players/local:ann")["name"] == "ann"
     games = app.app.state.use_cases.player_profile.games

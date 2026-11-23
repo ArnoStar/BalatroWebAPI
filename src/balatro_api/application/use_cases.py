@@ -125,7 +125,7 @@ def mod_views(mods: Sequence[ModRef]) -> list[ModRefView]:
 
 def settings_view(s: GameSettings) -> SettingsView:
     return SettingsView(seed=s.seed, deck=s.deck, stake=s.stake, challenge=s.challenge, game_speed=s.game_speed,
-                        seeded=s.seeded, mode=s.mode, mods=mod_views(s.mods))
+                        seeded=s.seeded, mode=s.mode, mode_rules=s.mode_rules, mods=mod_views(s.mods))
 
 
 def owned_run(games: GameRepository, player: Player, game_id: str) -> Run:
@@ -273,7 +273,8 @@ class ImportGame:
         packages = self._packages(refs, request.mod_packages)
         settings = self.engine.check_settings(GameSettings(
             seed=request.seed, deck=request.deck, stake=request.stake, challenge=request.challenge,
-            game_speed=request.game_speed, seeded=request.seeded, mode=request.mode, mods=refs), packages)
+            game_speed=request.game_speed, seeded=request.seeded, mode=request.mode,
+            mode_rules=request.mode_rules if request.mode else None, mods=refs), packages)
         now = self.clock.now()
         run = Run(id=self.ids.new_id(), settings=settings, engine_version=self.engine.version,
                   progress=Progress(Phase.BLIND_SELECT, 1, 0, 0, False),  # (replaced by the replay's)
